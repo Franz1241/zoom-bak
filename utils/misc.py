@@ -3,10 +3,87 @@ Configuration utilities module.
 Handles loading and validation of application configuration.
 """
 import os
+import time
+import functools
 import yaml
 from logging_config import get_logger
 
 logger = get_logger()
+
+
+def retry(exceptions, tries=5, delay=300, backoff=2, logger=None):
+    """Retry calling the decorated function using an exponential backoff."""
+    
+    def deco_retry(f):
+        @functools.wraps(f)
+        def f_retry(*args, **kwargs):
+            mtries, mdelay = tries, delay
+            while mtries > 1:
+                try:
+                    return f(*args, **kwargs)
+                except exceptions:
+                    if logger:
+                        logger.info(
+                            f"Retrying {f.__name__} in {mdelay} seconds, tries left: {mtries}"
+                        )
+                    else:
+                        print(
+                            f"Retrying {f.__name__} in {mdelay} seconds, tries left: {mtries}"
+                        )
+                    time.sleep(mdelay)
+                    mtries -= 1
+                    mdelay *= backoff
+            return f(*args, **kwargs)
+        
+        return f_retry
+    
+    return deco_retry
+
+
+def api_retry(tries=3, delay=5, backoff=2, logger=None):
+    """Retry decorator specifically for API operations."""
+    import requests
+    
+    return retry(
+        exceptions=(requests.exceptions.RequestException, requests.exceptions.HTTPError),
+        tries=tries,
+        delay=delay,
+        backoff=backoff,
+        logger=logger
+    )
+
+
+def file_retry(tries=3, delay=60, backoff=1, logger=None):
+    """Retry decorator for file operations (downloads, I/O)."""
+    import requests
+    
+    return retry(
+        exceptions=(requests.exceptions.RequestException, OSError, IOError),
+        tries=tries,
+        delay=delay,
+        backoff=backoff,
+        logger=logger
+    )
+
+
+def db_retry(tries=3, delay=1, backoff=2, logger=None):
+    """Retry decorator specifically for database operations."""
+    
+    # Import here to avoid issues if psycopg2 is not available
+    try:
+        import psycopg2
+        db_exceptions = (psycopg2.OperationalError, psycopg2.InterfaceError, psycopg2.DatabaseError)
+    except ImportError:
+        # Fallback to general exception
+        db_exceptions = (Exception,)
+    
+    return retry(
+        exceptions=db_exceptions,
+        tries=tries,
+        delay=delay,
+        backoff=backoff,
+        logger=logger
+    )
 
 
 def load_config(config_path="config.yaml"):

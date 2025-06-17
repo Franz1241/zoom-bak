@@ -4,8 +4,10 @@ Contains file handling and directory operations.
 """
 import os
 import time
+import functools
 import requests
 from logging_config import get_logger
+from utils.misc import file_retry
 
 logger = get_logger()
 
@@ -28,6 +30,39 @@ def create_dirs(base_dir, user_email, data_type="meetings"):
     return user_dir
 
 
+def _download_file_with_retry(url, token, dest_path, config, file_description="file"):
+    """
+    Internal function to download file with retry decorator.
+    
+    Args:
+        url: Download URL
+        token: Authorization token
+        dest_path: Destination file path
+        config: Configuration dictionary
+        file_description: Description for logging
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    logger.debug(f"Downloading {file_description} to {dest_path}")
+
+    headers = {"Authorization": f"Bearer {token}"}
+    r = requests.get(url, headers=headers, stream=True, timeout=config['api']['request_timeout'])
+    r.raise_for_status()
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+
+    with open(dest_path, "wb") as f:
+        for chunk in r.iter_content(1024):
+            if chunk:
+                f.write(chunk)
+
+    file_size = os.path.getsize(dest_path)
+    logger.info(
+        f"Downloaded {file_description}: {os.path.basename(dest_path)} ({file_size} bytes)"
+    )
+    return True
+
+
 def download_file(url, token, dest_path, config, file_description="file", retries=None):
     """
     Download file with proper error handling and logging.
@@ -46,35 +81,19 @@ def download_file(url, token, dest_path, config, file_description="file", retrie
     if retries is None:
         retries = config['api']['retries']
     
-    logger.debug(f"Downloading {file_description} to {dest_path}")
-
-    headers = {"Authorization": f"Bearer {token}"}
-    for attempt in range(retries):
-        try:
-            r = requests.get(url, headers=headers, stream=True, timeout=config['api']['request_timeout'])
-            r.raise_for_status()
-            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-
-            with open(dest_path, "wb") as f:
-                for chunk in r.iter_content(1024):
-                    if chunk:
-                        f.write(chunk)
-
-            file_size = os.path.getsize(dest_path)
-            logger.info(
-                f"Downloaded {file_description}: {os.path.basename(dest_path)} ({file_size} bytes)"
-            )
-            return True
-
-        except Exception as e:
-            logger.warning(
-                f"Download failed ({attempt + 1}/{retries}) for {file_description} — {e}"
-            )
-            if attempt < retries - 1:
-                time.sleep(config['api']['sleep_durations']['download_retry'])
-
-    logger.error(f"Failed to download {file_description} after {retries} attempts")
-    return False
+    # Create a new decorated function with the correct parameters
+    decorated_download = file_retry(
+        tries=retries,
+        delay=config['api']['sleep_durations']['download_retry'],
+        backoff=1,  # No exponential backoff
+        logger=logger
+    )(_download_file_with_retry)
+    
+    try:
+        return decorated_download(url, token, dest_path, config, file_description)
+    except Exception as e:
+        logger.error(f"Failed to download {file_description} after {retries} attempts: {e}")
+        return False
 
 
 def get_file_extension(file_info, config):

@@ -3,16 +3,45 @@ Zoom API authentication module.
 Handles OAuth token management and refresh.
 """
 import os
+import time
+import functools
 import requests
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from logging_config import get_logger
+from utils.misc import api_retry
 
 logger = get_logger()
 
 # Global token variables for automatic refresh
 access_token = None
 token_expires_at = None
+
+
+@api_retry(tries=3, delay=5, backoff=2, logger=logger)
+def _get_token_from_api(config):
+    """
+    Internal function to get token from API with retry logic.
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        dict: Token data from API
+    """
+    # Get credentials from environment
+    zoom_account_id = os.getenv("ZOOM_ACCOUNT_ID")
+    zoom_client_id = os.getenv("ZOOM_CLIENT_ID")
+    zoom_client_secret = os.getenv("ZOOM_CLIENT_SECRET")
+    
+    if not all([zoom_account_id, zoom_client_id, zoom_client_secret]):
+        raise ValueError("Missing Zoom client credentials in environment variables")
+    
+    url = f"https://zoom.us/oauth/token?grant_type=account_credentials&account_id={zoom_account_id}"
+
+    response = requests.post(url, auth=(zoom_client_id, zoom_client_secret))
+    response.raise_for_status()
+    return response.json()
 
 
 def get_access_token(config, force_refresh=False):
@@ -38,20 +67,8 @@ def get_access_token(config, force_refresh=False):
 
     logger.info("Refreshing access token...")
     
-    # Get credentials from environment
-    zoom_account_id = os.getenv("ZOOM_ACCOUNT_ID")
-    zoom_client_id = os.getenv("ZOOM_CLIENT_ID")
-    zoom_client_secret = os.getenv("ZOOM_CLIENT_SECRET")
-    
-    if not all([zoom_account_id, zoom_client_id, zoom_client_secret]):
-        raise ValueError("Missing Zoom client credentials in environment variables")
-    
-    url = f"https://zoom.us/oauth/token?grant_type=account_credentials&account_id={zoom_account_id}"
-
     try:
-        response = requests.post(url, auth=(zoom_client_id, zoom_client_secret))
-        response.raise_for_status()
-        token_data = response.json()
+        token_data = _get_token_from_api(config)
 
         access_token = token_data["access_token"]
         expires_in = token_data.get("expires_in", 3600)  # Default 1 hour

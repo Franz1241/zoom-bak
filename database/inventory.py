@@ -4,10 +4,12 @@ Handles recording inventory management and queries.
 """
 import json
 from logging_config import get_logger
+from utils.misc import db_retry
 
 logger = get_logger()
 
 
+@db_retry(tries=3, delay=1, backoff=2, logger=logger)
 def insert_meeting_inventory(cursor, conn, recording_type, recording_id, meeting_id, 
                            user_email, topic, start_time, duration, file_type, 
                            file_size, download_url, raw_data, version="v4"):
@@ -33,35 +35,32 @@ def insert_meeting_inventory(cursor, conn, recording_type, recording_id, meeting
     Returns:
         bool: True if successful, False otherwise
     """
-    try:
-        cursor.execute(
-            f"""
-            INSERT INTO zoom_recording_inventory_{version} 
-            (recording_type, recording_id, meeting_id, user_email, topic, 
-             start_time, duration, file_type, file_size, download_url, raw_data)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (recording_type, recording_id, file_type) DO NOTHING
-        """,
-            (
-                recording_type,
-                recording_id,
-                meeting_id,
-                user_email,
-                topic,
-                start_time,
-                duration,
-                file_type,
-                file_size,
-                download_url,
-                json.dumps(raw_data),
-            ),
-        )
-        return True
-    except Exception as e:
-        logger.error(f"Error inserting meeting recording inventory: {e}")
-        return False
+    cursor.execute(
+        f"""
+        INSERT INTO zoom_recording_inventory_{version} 
+        (recording_type, recording_id, meeting_id, user_email, topic, 
+         start_time, duration, file_type, file_size, download_url, raw_data)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (recording_type, recording_id, file_type) DO NOTHING
+    """,
+        (
+            recording_type,
+            recording_id,
+            meeting_id,
+            user_email,
+            topic,
+            start_time,
+            duration,
+            file_type,
+            file_size,
+            download_url,
+            json.dumps(raw_data),
+        ),
+    )
+    return True
 
 
+@db_retry(tries=3, delay=1, backoff=2, logger=logger)
 def insert_phone_inventory(cursor, conn, recording_id, user_email, start_time, 
                          duration, file_type, file_size, download_url, raw_data, version="v4"):
     """
@@ -83,31 +82,27 @@ def insert_phone_inventory(cursor, conn, recording_id, user_email, start_time,
     Returns:
         bool: True if successful, False otherwise
     """
-    try:
-        cursor.execute(
-            f"""
-            INSERT INTO zoom_recording_inventory_{version} 
-            (recording_type, recording_id, user_email, start_time, 
-             duration, file_type, file_size, download_url, raw_data)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (recording_type, recording_id, file_type) DO NOTHING
-        """,
-            (
-                "phone",
-                recording_id,
-                user_email,
-                start_time,
-                duration,
-                file_type,
-                file_size,
-                download_url,
-                json.dumps(raw_data),
-            ),
-        )
-        return True
-    except Exception as e:
-        logger.error(f"Error inserting phone recording inventory: {e}")
-        return False
+    cursor.execute(
+        f"""
+        INSERT INTO zoom_recording_inventory_{version} 
+        (recording_type, recording_id, user_email, start_time, 
+         duration, file_type, file_size, download_url, raw_data)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (recording_type, recording_id, file_type) DO NOTHING
+    """,
+        (
+            "phone",
+            recording_id,
+            user_email,
+            start_time,
+            duration,
+            file_type,
+            file_size,
+            download_url,
+            json.dumps(raw_data),
+        ),
+    )
+    return True
 
 
 def get_undownloaded_recordings(cursor, version="v4"):
@@ -131,6 +126,7 @@ def get_undownloaded_recordings(cursor, version="v4"):
     return cursor.fetchall()
 
 
+@db_retry(tries=3, delay=1, backoff=2, logger=logger)
 def update_recording_status(cursor, conn, inventory_id, status, downloaded_at=None, 
                           error_message=None, version="v4"):
     """
@@ -148,21 +144,16 @@ def update_recording_status(cursor, conn, inventory_id, status, downloaded_at=No
     Returns:
         bool: True if successful, False otherwise
     """
-    try:
-        cursor.execute(
-            f"""
-            UPDATE zoom_recording_inventory_{version} 
-            SET status = %s, downloaded_at = %s, error_message = %s
-            WHERE id = %s
-        """,
-            (status, downloaded_at, error_message, inventory_id),
-        )
-        conn.commit()
-        return True
-    except Exception as e:
-        logger.error(f"Error updating recording status: {e}")
-        conn.rollback()
-        return False
+    cursor.execute(
+        f"""
+        UPDATE zoom_recording_inventory_{version} 
+        SET status = %s, downloaded_at = %s, error_message = %s
+        WHERE id = %s
+    """,
+        (status, downloaded_at, error_message, inventory_id),
+    )
+    conn.commit()
+    return True
 
 
 def get_discovery_summary(cursor, version="v4"):

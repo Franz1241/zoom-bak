@@ -3,6 +3,7 @@ API utilities module.
 Contains generic API request handling and utilities.
 """
 import time
+import functools
 import requests
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
