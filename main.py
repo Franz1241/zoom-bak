@@ -68,13 +68,16 @@ ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
 ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID")
 ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET")
 
+# === Version Configuration ===
+VERSION = "v4"
+
 # === PostgreSQL ===
 POSTGRES_URL = "postgresql://postgres:postgres@localhost:5432/zoom_backups"
 conn = psycopg2.connect(POSTGRES_URL)
 cursor = conn.cursor()
 
 # === Config ===
-BASE_DIR = "./zoom_backups_v4"
+BASE_DIR = f"./zoom_backups_{VERSION}"
 START_DATE = "2020-11-01"
 END_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 RATE_LIMIT_DELAY = 0.5  # Seconds between API calls
@@ -90,8 +93,8 @@ def setup_database():
     logger.info("Setting up database tables...")
 
     # Recording inventory table - tracks all recordings found before download
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS zoom_recording_inventory_v4 (
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS zoom_recording_inventory_{VERSION} (
             id SERIAL PRIMARY KEY,
             recording_type VARCHAR(20) NOT NULL, -- 'meeting', 'phone', 'webinar'
             recording_id VARCHAR(128) NOT NULL,
@@ -112,9 +115,9 @@ def setup_database():
         );
     """)
 
-    # Meeting recordings table (updated with _v4 and longer varchar fields)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS zoom_recordings_v4 (
+    # Meeting recordings table (updated with version and longer varchar fields)
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS zoom_recordings_{VERSION} (
             id SERIAL PRIMARY KEY,
             meeting_id VARCHAR(128),
             recording_id VARCHAR(128),
@@ -132,13 +135,13 @@ def setup_database():
             transcript_path TEXT,
             downloaded_at TIMESTAMPTZ DEFAULT NOW(),
             data_type VARCHAR(20) DEFAULT 'meeting',
-            unprocessed JSON DEFAULT '{}'
+            unprocessed JSON DEFAULT '{{}}'
         );
     """)
 
     # Phone recordings table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS zoom_phone_recordings_v4 (
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS zoom_phone_recordings_{VERSION} (
             id SERIAL PRIMARY KEY,
             recording_id VARCHAR(128) UNIQUE,
             call_id VARCHAR(128),
@@ -157,13 +160,13 @@ def setup_database():
             owner_id VARCHAR(128),
             owner_email VARCHAR(320),
             downloaded_at TIMESTAMPTZ DEFAULT NOW(),
-            unprocessed JSON DEFAULT '{}'
+            unprocessed JSON DEFAULT '{{}}'
         );
     """)
 
     # Webinars table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS zoom_webinar_recordings_v4 (
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS zoom_webinar_recordings_{VERSION} (
             id SERIAL PRIMARY KEY,
             webinar_id VARCHAR(128),
             recording_id VARCHAR(128),
@@ -180,19 +183,19 @@ def setup_database():
             path TEXT,
             transcript_path TEXT,
             downloaded_at TIMESTAMPTZ DEFAULT NOW(),
-            unprocessed JSON DEFAULT '{}'
+            unprocessed JSON DEFAULT '{{}}'
         );
     """)
 
     # Create indexes for better performance
     cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_inventory_user_email ON zoom_recording_inventory_v4(user_email);"
+        f"CREATE INDEX IF NOT EXISTS idx_inventory_user_email ON zoom_recording_inventory_{VERSION}(user_email);"
     )
     cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_inventory_start_time ON zoom_recording_inventory_v4(start_time);"
+        f"CREATE INDEX IF NOT EXISTS idx_inventory_start_time ON zoom_recording_inventory_{VERSION}(start_time);"
     )
     cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_inventory_status ON zoom_recording_inventory_v4(status);"
+        f"CREATE INDEX IF NOT EXISTS idx_inventory_status ON zoom_recording_inventory_{VERSION}(status);"
     )
 
     conn.commit()
@@ -398,11 +401,11 @@ def discover_all_recordings(user_emails, token):
             continue
 
     # Report discovery results
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT recording_type, COUNT(*), 
                MIN(start_time) as earliest, 
                MAX(start_time) as latest
-        FROM zoom_recording_inventory_v4 
+        FROM zoom_recording_inventory_{VERSION} 
         GROUP BY recording_type
     """)
     results = cursor.fetchall()
@@ -412,9 +415,9 @@ def discover_all_recordings(user_emails, token):
         logger.info(f"  {rec_type}: {count} recordings ({earliest} to {latest})")
 
     # Check for 2020 recordings specifically
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT recording_type, user_email, COUNT(*) 
-        FROM zoom_recording_inventory_v4 
+        FROM zoom_recording_inventory_{VERSION} 
         WHERE start_time >= '2020-11-01' AND start_time < '2021-01-01'
         GROUP BY recording_type, user_email
         ORDER BY user_email
@@ -459,8 +462,8 @@ def discover_meeting_recordings(user_email, token):
                     ):
                         try:
                             cursor.execute(
-                                """
-                                INSERT INTO zoom_recording_inventory_v4 
+                                f"""
+                                INSERT INTO zoom_recording_inventory_{VERSION} 
                                 (recording_type, recording_id, meeting_id, user_email, topic, 
                                  start_time, duration, file_type, file_size, download_url, raw_data)
                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -525,8 +528,8 @@ def discover_phone_recordings(user_email, token):
             if recording.get("download_url"):
                 try:
                     cursor.execute(
-                        """
-                        INSERT INTO zoom_recording_inventory_v4 
+                        f"""
+                        INSERT INTO zoom_recording_inventory_{VERSION} 
                         (recording_type, recording_id, user_email, start_time, 
                          duration, file_type, file_size, download_url, raw_data)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -563,10 +566,10 @@ def download_recordings_from_inventory():
     logger.info("Starting download phase...")
 
     # Get all recordings that haven't been downloaded yet
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT id, recording_type, recording_id, user_email, file_type, 
                download_url, raw_data, start_time, topic
-        FROM zoom_recording_inventory_v4 
+        FROM zoom_recording_inventory_{VERSION} 
         WHERE status = 'found'
         ORDER BY start_time DESC
     """)
@@ -610,8 +613,8 @@ def download_recordings_from_inventory():
             # Update status
             status = "downloaded" if success else "failed"
             cursor.execute(
-                """
-                UPDATE zoom_recording_inventory_v4 
+                f"""
+                UPDATE zoom_recording_inventory_{VERSION} 
                 SET status = %s, downloaded_at = %s
                 WHERE id = %s
             """,
@@ -622,8 +625,8 @@ def download_recordings_from_inventory():
         except Exception as e:
             logger.error(f"Error downloading recording {rec_id}: {e}")
             cursor.execute(
-                """
-                UPDATE zoom_recording_inventory_v4 
+                f"""
+                UPDATE zoom_recording_inventory_{VERSION} 
                 SET status = 'failed', error_message = %s
                 WHERE id = %s
             """,
@@ -719,8 +722,8 @@ def save_meeting_metadata(
 
     try:
         cursor.execute(
-            """
-            INSERT INTO zoom_recordings_v4 (
+            f"""
+            INSERT INTO zoom_recordings_{VERSION} (
                 meeting_id, recording_id, topic, host_id, host_email, start_time,
                 duration, file_type, file_size, recording_type,
                 download_url, transcript_url, path, transcript_path, data_type, unprocessed
@@ -766,8 +769,8 @@ def save_phone_metadata(recording, user_email, local_path):
 
     try:
         cursor.execute(
-            """
-            INSERT INTO zoom_phone_recordings_v4 (
+            f"""
+            INSERT INTO zoom_phone_recordings_{VERSION} (
                 recording_id, call_id, caller_number, callee_number,
                 caller_name, callee_name, direction, start_time, end_time,
                 duration, file_type, file_size, download_url, path,
@@ -851,16 +854,16 @@ def main():
     logger.info("Backup process completed!")
 
     # Print summary
-    cursor.execute("SELECT COUNT(*) FROM zoom_recordings_v4")
+    cursor.execute(f"SELECT COUNT(*) FROM zoom_recordings_{VERSION}")
     result = cursor.fetchone()
     meeting_count = result[0] if result else 0
 
-    cursor.execute("SELECT COUNT(*) FROM zoom_phone_recordings_v4")
+    cursor.execute(f"SELECT COUNT(*) FROM zoom_phone_recordings_{VERSION}")
     result = cursor.fetchone()
     phone_count = result[0] if result else 0
 
     cursor.execute(
-        "SELECT status, COUNT(*) FROM zoom_recording_inventory_v4 GROUP BY status"
+        f"SELECT status, COUNT(*) FROM zoom_recording_inventory_{VERSION} GROUP BY status"
     )
     status_counts = cursor.fetchall()
 
@@ -872,9 +875,9 @@ def main():
         logger.info(f"    {status}: {count}")
 
     # Show year distribution from inventory
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT EXTRACT(YEAR FROM start_time) as year, COUNT(*), recording_type
-        FROM zoom_recording_inventory_v4 
+        FROM zoom_recording_inventory_{VERSION} 
         GROUP BY EXTRACT(YEAR FROM start_time), recording_type
         ORDER BY year, recording_type
     """)
