@@ -3,7 +3,6 @@ Database metadata operations for Zoom Backup application.
 Handles saving of meeting and phone recording metadata.
 """
 import json
-from datetime import datetime
 from logging_config import get_logger
 
 logger = get_logger()

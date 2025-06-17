@@ -2,7 +2,6 @@
 Database setup module for Zoom Backup application.
 Handles table creation, indexes, and database schema setup.
 """
-import psycopg2
 from logging_config import get_logger
 
 logger = get_logger()
