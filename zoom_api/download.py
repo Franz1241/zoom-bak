@@ -105,7 +105,7 @@ def download_meeting_from_inventory(
         meeting = data["meeting"]
         file_info = data["file_info"]
 
-        base_dir = config["directories"]["base_dir"]
+        base_dir = config["directories"]["base_dir"] + "_" + version
         user_dir = create_dirs(base_dir, user_email, "meetings")
 
         file_ext = get_file_extension(file_info, config)
@@ -159,7 +159,7 @@ def download_phone_from_inventory(
         data = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
         recording = data["recording"]
 
-        base_dir = config["directories"]["base_dir"]
+        base_dir = config["directories"]["base_dir"] + "_" + version
         user_dir = create_dirs(base_dir, user_email, "phone")
 
         start_time_clean = (
@@ -215,7 +215,7 @@ def download_webinar_from_inventory(
         webinar = data["webinar"]
         file_info = data["file_info"]
 
-        base_dir = config["directories"]["base_dir"]
+        base_dir = config["directories"]["base_dir"] + "_" + version
         user_dir = create_dirs(base_dir, user_email, "webinars")
 
         file_ext = get_file_extension(file_info, config)
