@@ -139,6 +139,7 @@ logging:
 - Python 3.10+
 - PostgreSQL database
 - Sufficient disk space for recordings storage
+- [uv](https://docs.astral.sh/uv/) (Python package manager)
 
 ### Setup
 
@@ -154,6 +155,7 @@ logging:
    ```bash
    uv sync
    ```
+   This will create a `.venv` and install all dependencies from `pyproject.toml` and `uv.lock`.
 
 3. **Set up environment variables:**
    Create a `.env` file in the project root:
@@ -200,11 +202,8 @@ Your Zoom Server-to-Server OAuth App **MUST** have the following scopes enabled:
 ### Basic Execution
 
 ```bash
-# Activate the virtual environment
-source .venv/bin/activate
-
-# Run the backup process
-python main.py
+# Run the backup process using uv
+uv run main.py
 ```
 
 ### Monitoring Progress
@@ -220,6 +219,24 @@ tail -f logs/zoom_backup_debug.log
 
 # Check for errors and warnings
 tail -f logs/zoom_backup_warnings.log
+```
+
+## uv Best Practices
+
+- Use `uv sync` to install and update dependencies. This will create a `.venv` if it doesn't exist.
+- Use `uv run <script>` to run scripts, tests, or tools within the managed environment.
+- To add a new dependency: `uv add <package>`
+- To add a development dependency: `uv add --dev <package>`
+- You can activate the venv manually with `source .venv/bin/activate` if you prefer, but `uv run` is recommended.
+
+## Example Workflow
+
+```bash
+# Install dependencies and set up the environment
+uv sync
+
+# Run the main backup script
+uv run python main.py
 ```
 
 ## How It Works
