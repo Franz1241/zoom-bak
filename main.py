@@ -9,6 +9,13 @@ from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 from urllib.parse import quote
 from logging_config import setup_logging
+from database.setup import setup_database
+from database.metadata import save_meeting_metadata, save_phone_metadata
+from database.inventory import (
+    insert_meeting_inventory, insert_phone_inventory, get_undownloaded_recordings,
+    update_recording_status, get_discovery_summary, get_2020_recordings,
+    get_status_counts, get_year_distribution, get_download_counts
+)
 
 load_dotenv()
 
@@ -58,119 +65,7 @@ access_token = None
 token_expires_at = None
 
 
-# === Database Setup ===
-def setup_database():
-    """Create tables if they don't exist"""
-    logger.info("Setting up database tables...")
 
-    # Recording inventory table - tracks all recordings found before download
-    cursor.execute(f"""
-        CREATE TABLE IF NOT EXISTS zoom_recording_inventory_{VERSION} (
-            id SERIAL PRIMARY KEY,
-            recording_type VARCHAR(20) NOT NULL, -- 'meeting', 'phone', 'webinar'
-            recording_id VARCHAR(128) NOT NULL,
-            meeting_id VARCHAR(128),
-            user_email VARCHAR(320),
-            topic TEXT,
-            start_time TIMESTAMPTZ,
-            duration INTEGER,
-            file_type VARCHAR(32),
-            file_size BIGINT,
-            download_url TEXT,
-            status VARCHAR(20) DEFAULT 'found', -- 'found', 'downloaded', 'failed', 'skipped'
-            found_at TIMESTAMPTZ DEFAULT NOW(),
-            downloaded_at TIMESTAMPTZ,
-            error_message TEXT,
-            raw_data JSON,
-            UNIQUE(recording_type, recording_id, file_type)
-        );
-    """)
-
-    # Meeting recordings table (updated with version and longer varchar fields)
-    cursor.execute(f"""
-        CREATE TABLE IF NOT EXISTS zoom_recordings_{VERSION} (
-            id SERIAL PRIMARY KEY,
-            meeting_id VARCHAR(128),
-            recording_id VARCHAR(128),
-            topic TEXT,
-            host_id VARCHAR(128),
-            host_email VARCHAR(320),
-            start_time TIMESTAMPTZ,
-            duration INTEGER,
-            file_type VARCHAR(32),
-            file_size BIGINT,
-            recording_type VARCHAR(64),
-            download_url TEXT,
-            transcript_url TEXT,
-            path TEXT,
-            transcript_path TEXT,
-            downloaded_at TIMESTAMPTZ DEFAULT NOW(),
-            data_type VARCHAR(20) DEFAULT 'meeting',
-            unprocessed JSON DEFAULT '{{}}'
-        );
-    """)
-
-    # Phone recordings table
-    cursor.execute(f"""
-        CREATE TABLE IF NOT EXISTS zoom_phone_recordings_{VERSION} (
-            id SERIAL PRIMARY KEY,
-            recording_id VARCHAR(128) UNIQUE,
-            call_id VARCHAR(128),
-            caller_number VARCHAR(32),
-            callee_number VARCHAR(32),
-            caller_name VARCHAR(255),
-            callee_name VARCHAR(255),
-            direction VARCHAR(16),
-            start_time TIMESTAMPTZ,
-            end_time TIMESTAMPTZ,
-            duration INTEGER,
-            file_type VARCHAR(32),
-            file_size BIGINT,
-            download_url TEXT,
-            path TEXT,
-            owner_id VARCHAR(128),
-            owner_email VARCHAR(320),
-            downloaded_at TIMESTAMPTZ DEFAULT NOW(),
-            unprocessed JSON DEFAULT '{{}}'
-        );
-    """)
-
-    # Webinars table
-    cursor.execute(f"""
-        CREATE TABLE IF NOT EXISTS zoom_webinar_recordings_{VERSION} (
-            id SERIAL PRIMARY KEY,
-            webinar_id VARCHAR(128),
-            recording_id VARCHAR(128),
-            topic TEXT,
-            host_id VARCHAR(128),
-            host_email VARCHAR(320),
-            start_time TIMESTAMPTZ,
-            duration INTEGER,
-            file_type VARCHAR(32),
-            file_size BIGINT,
-            recording_type VARCHAR(64),
-            download_url TEXT,
-            transcript_url TEXT,
-            path TEXT,
-            transcript_path TEXT,
-            downloaded_at TIMESTAMPTZ DEFAULT NOW(),
-            unprocessed JSON DEFAULT '{{}}'
-        );
-    """)
-
-    # Create indexes for better performance
-    cursor.execute(
-        f"CREATE INDEX IF NOT EXISTS idx_inventory_user_email ON zoom_recording_inventory_{VERSION}(user_email);"
-    )
-    cursor.execute(
-        f"CREATE INDEX IF NOT EXISTS idx_inventory_start_time ON zoom_recording_inventory_{VERSION}(start_time);"
-    )
-    cursor.execute(
-        f"CREATE INDEX IF NOT EXISTS idx_inventory_status ON zoom_recording_inventory_{VERSION}(status);"
-    )
-
-    conn.commit()
-    logger.info("Database tables created successfully")
 
 
 # === Get Access Token with Auto-Refresh ===
@@ -373,29 +268,13 @@ def discover_all_recordings(user_emails, token):
             continue
 
     # Report discovery results
-    cursor.execute(f"""
-        SELECT recording_type, COUNT(*), 
-               MIN(start_time) as earliest, 
-               MAX(start_time) as latest
-        FROM zoom_recording_inventory_{VERSION} 
-        GROUP BY recording_type
-    """)
-    results = cursor.fetchall()
-
+    results = get_discovery_summary(cursor, VERSION)
     logger.info("Discovery Results:")
     for rec_type, count, earliest, latest in results:
         logger.info(f"  {rec_type}: {count} recordings ({earliest} to {latest})")
 
     # Check for 2020 recordings specifically
-    cursor.execute(f"""
-        SELECT recording_type, user_email, COUNT(*) 
-        FROM zoom_recording_inventory_{VERSION} 
-        WHERE start_time >= '2020-11-01' AND start_time < '2021-01-01'
-        GROUP BY recording_type, user_email
-        ORDER BY user_email
-    """)
-    results_2020 = cursor.fetchall()
-
+    results_2020 = get_2020_recordings(cursor, VERSION)
     if results_2020:
         logger.info("Found recordings from Nov-Dec 2020:")
         for rec_type, email, count in results_2020:
@@ -432,36 +311,15 @@ def discover_meeting_recordings(user_email, token):
                         file_info.get("download_url")
                         and file_info.get("status") == "completed"
                     ):
-                        try:
-                            cursor.execute(
-                                f"""
-                                INSERT INTO zoom_recording_inventory_{VERSION} 
-                                (recording_type, recording_id, meeting_id, user_email, topic, 
-                                 start_time, duration, file_type, file_size, download_url, raw_data)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                ON CONFLICT (recording_type, recording_id, file_type) DO NOTHING
-                            """,
-                                (
-                                    "meeting",
-                                    file_info.get("id"),
-                                    meeting.get("uuid"),
-                                    user_email,
-                                    meeting.get("topic"),
-                                    meeting.get("start_time"),
-                                    meeting.get("duration"),
-                                    file_info.get("file_type"),
-                                    file_info.get("file_size"),
-                                    file_info.get("download_url"),
-                                    json.dumps(
-                                        {"meeting": meeting, "file_info": file_info}
-                                    ),
-                                ),
-                            )
+                        if insert_meeting_inventory(
+                            cursor, conn, "meeting", file_info.get("id"), 
+                            meeting.get("uuid"), user_email, meeting.get("topic"),
+                            meeting.get("start_time"), meeting.get("duration"),
+                            file_info.get("file_type"), file_info.get("file_size"),
+                            file_info.get("download_url"),
+                            {"meeting": meeting, "file_info": file_info}, VERSION
+                        ):
                             range_found += 1
-                        except Exception as e:
-                            logger.error(
-                                f"Error inserting meeting recording inventory: {e}"
-                            )
 
             next_page_token = data.get("next_page_token")
             if not next_page_token:
@@ -498,30 +356,13 @@ def discover_phone_recordings(user_email, token):
 
         for recording in data["recordings"]:
             if recording.get("download_url"):
-                try:
-                    cursor.execute(
-                        f"""
-                        INSERT INTO zoom_recording_inventory_{VERSION} 
-                        (recording_type, recording_id, user_email, start_time, 
-                         duration, file_type, file_size, download_url, raw_data)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (recording_type, recording_id, file_type) DO NOTHING
-                    """,
-                        (
-                            "phone",
-                            recording.get("id"),
-                            user_email,
-                            recording.get("start_time"),
-                            recording.get("duration"),
-                            "mp3",
-                            recording.get("file_size"),
-                            recording.get("download_url"),
-                            json.dumps({"recording": recording}),
-                        ),
-                    )
+                if insert_phone_inventory(
+                    cursor, conn, recording.get("id"), user_email,
+                    recording.get("start_time"), recording.get("duration"),
+                    "mp3", recording.get("file_size"), recording.get("download_url"),
+                    {"recording": recording}, VERSION
+                ):
                     total_found += 1
-                except Exception as e:
-                    logger.error(f"Error inserting phone recording inventory: {e}")
 
         next_page_token = data.get("next_page_token")
         if not next_page_token:
@@ -538,15 +379,7 @@ def download_recordings_from_inventory():
     logger.info("Starting download phase...")
 
     # Get all recordings that haven't been downloaded yet
-    cursor.execute(f"""
-        SELECT id, recording_type, recording_id, user_email, file_type, 
-               download_url, raw_data, start_time, topic
-        FROM zoom_recording_inventory_{VERSION} 
-        WHERE status = 'found'
-        ORDER BY start_time DESC
-    """)
-
-    recordings = cursor.fetchall()
+    recordings = get_undownloaded_recordings(cursor, VERSION)
     logger.info(f"Found {len(recordings)} recordings to download")
 
     token = get_access_token()
@@ -584,27 +417,16 @@ def download_recordings_from_inventory():
 
             # Update status
             status = "downloaded" if success else "failed"
-            cursor.execute(
-                f"""
-                UPDATE zoom_recording_inventory_{VERSION} 
-                SET status = %s, downloaded_at = %s
-                WHERE id = %s
-            """,
-                (status, datetime.now() if success else None, inv_id),
+            update_recording_status(
+                cursor, conn, inv_id, status, 
+                datetime.now() if success else None, None, VERSION
             )
-            conn.commit()
 
         except Exception as e:
             logger.error(f"Error downloading recording {rec_id}: {e}")
-            cursor.execute(
-                f"""
-                UPDATE zoom_recording_inventory_{VERSION} 
-                SET status = 'failed', error_message = %s
-                WHERE id = %s
-            """,
-                (str(e), inv_id),
+            update_recording_status(
+                cursor, conn, inv_id, "failed", None, str(e), VERSION
             )
-            conn.commit()
 
 
 def download_meeting_from_inventory(inv_id, user_email, raw_data, token):
@@ -634,7 +456,7 @@ def download_meeting_from_inventory(inv_id, user_email, raw_data, token):
             logger.debug(f"File already exists: {file_path}")
 
         # Save metadata
-        return save_meeting_metadata(meeting, user_email, file_info, file_path)
+        return save_meeting_metadata(cursor, conn, meeting, user_email, file_info, file_path, None, VERSION)
 
     except Exception as e:
         logger.error(f"Error in download_meeting_from_inventory: {e}")
@@ -669,114 +491,14 @@ def download_phone_from_inventory(inv_id, user_email, raw_data, token):
             logger.debug(f"File already exists: {file_path}")
 
         # Save metadata
-        return save_phone_metadata(recording, user_email, file_path)
+        return save_phone_metadata(cursor, conn, recording, user_email, file_path, VERSION)
 
     except Exception as e:
         logger.error(f"Error in download_phone_from_inventory: {e}")
         return False
 
 
-# === Metadata Saving Functions ===
-def save_meeting_metadata(
-    meeting, user_email, file_info, local_path, transcript_path=None
-):
-    """Save meeting recording metadata with fallback strategy"""
-    logger.debug(f"Saving metadata for meeting: {meeting.get('topic', 'No topic')}")
 
-    fallback_data = {
-        "meeting": meeting,
-        "file_info": file_info,
-        "user_email": user_email,
-        "path": local_path,
-        "transcript_path": transcript_path,
-        "data_type": "meeting",
-    }
-
-    try:
-        cursor.execute(
-            f"""
-            INSERT INTO zoom_recordings_{VERSION} (
-                meeting_id, recording_id, topic, host_id, host_email, start_time,
-                duration, file_type, file_size, recording_type,
-                download_url, transcript_url, path, transcript_path, data_type, unprocessed
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT DO NOTHING
-        """,
-            (
-                meeting.get("uuid"),
-                file_info.get("id"),
-                meeting.get("topic"),
-                meeting.get("host_id"),
-                user_email,
-                meeting.get("start_time"),
-                meeting.get("duration"),
-                file_info.get("file_type"),
-                file_info.get("file_size"),
-                file_info.get("recording_type"),
-                file_info.get("download_url"),
-                None,
-                local_path,
-                transcript_path,
-                "meeting",
-                json.dumps(fallback_data),
-            ),
-        )
-        conn.commit()
-        return True
-
-    except Exception as e:
-        logger.warning(f"Meeting metadata save failed: {e}")
-        conn.rollback()
-        return False
-
-
-def save_phone_metadata(recording, user_email, local_path):
-    """Save phone recording metadata with fallback strategy"""
-    fallback_data = {
-        "recording": recording,
-        "user_email": user_email,
-        "path": local_path,
-        "data_type": "phone",
-    }
-
-    try:
-        cursor.execute(
-            f"""
-            INSERT INTO zoom_phone_recordings_{VERSION} (
-                recording_id, call_id, caller_number, callee_number,
-                caller_name, callee_name, direction, start_time, end_time,
-                duration, file_type, file_size, download_url, path,
-                owner_id, owner_email, unprocessed
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (recording_id) DO NOTHING
-        """,
-            (
-                recording.get("id"),
-                recording.get("call_id"),
-                recording.get("caller_number"),
-                recording.get("callee_number"),
-                recording.get("caller_name"),
-                recording.get("callee_name"),
-                recording.get("direction"),
-                recording.get("start_time"),
-                recording.get("end_time"),
-                recording.get("duration"),
-                recording.get("file_type", "mp3"),
-                recording.get("file_size"),
-                recording.get("download_url"),
-                local_path,
-                recording.get("owner_id"),
-                user_email,
-                json.dumps(fallback_data),
-            ),
-        )
-        conn.commit()
-        return True
-
-    except Exception as e:
-        logger.warning(f"Phone metadata save failed: {e}")
-        conn.rollback()
-        return False
 
 
 # === User Management ===
@@ -810,7 +532,7 @@ def get_zoom_users(token):
 # === Main Process ===
 def main():
     logger.info("Starting Zoom backup process...")
-    setup_database()
+    setup_database(cursor, conn, VERSION)
 
     token = get_access_token()
     user_emails = get_zoom_users(token)
@@ -826,18 +548,8 @@ def main():
     logger.info("Backup process completed!")
 
     # Print summary
-    cursor.execute(f"SELECT COUNT(*) FROM zoom_recordings_{VERSION}")
-    result = cursor.fetchone()
-    meeting_count = result[0] if result else 0
-
-    cursor.execute(f"SELECT COUNT(*) FROM zoom_phone_recordings_{VERSION}")
-    result = cursor.fetchone()
-    phone_count = result[0] if result else 0
-
-    cursor.execute(
-        f"SELECT status, COUNT(*) FROM zoom_recording_inventory_{VERSION} GROUP BY status"
-    )
-    status_counts = cursor.fetchall()
+    meeting_count, phone_count = get_download_counts(cursor, VERSION)
+    status_counts = get_status_counts(cursor, VERSION)
 
     logger.info("Summary:")
     logger.info(f"  Meeting recordings downloaded: {meeting_count}")
@@ -847,14 +559,7 @@ def main():
         logger.info(f"    {status}: {count}")
 
     # Show year distribution from inventory
-    cursor.execute(f"""
-        SELECT EXTRACT(YEAR FROM start_time) as year, COUNT(*), recording_type
-        FROM zoom_recording_inventory_{VERSION} 
-        GROUP BY EXTRACT(YEAR FROM start_time), recording_type
-        ORDER BY year, recording_type
-    """)
-    results = cursor.fetchall()
-
+    results = get_year_distribution(cursor, VERSION)
     logger.info("Inventory by year and type:")
     for year, count, rec_type in results:
         logger.info(f"  {year or 'NULL'} ({rec_type}): {count}")
