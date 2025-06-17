@@ -3,12 +3,12 @@ import time
 import os
 import requests
 import psycopg2
-import logging
 import yaml
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 from urllib.parse import quote
+from logging_config import setup_logging
 
 load_dotenv()
 
@@ -34,55 +34,8 @@ def load_config():
 CONFIG = load_config()
 
 
-# === Setup Logging ===
-def setup_logging():
-    """Setup logging with separate files for different levels"""
-    log_config = CONFIG['logging']
-    log_dir = CONFIG['directories']['log_dir']
-    os.makedirs(log_dir, exist_ok=True)
-
-    # Create logger
-    logger = logging.getLogger("zoom_backup")
-    logger.setLevel(getattr(logging, log_config['levels']['file_debug']))
-
-    # Clear any existing handlers
-    logger.handlers.clear()
-
-    # Create formatters
-    detailed_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s"
-    )
-    simple_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-
-    # Debug file handler (all messages)
-    debug_handler = logging.FileHandler(os.path.join(log_dir, log_config['files']['debug']))
-    debug_handler.setLevel(getattr(logging, log_config['levels']['file_debug']))
-    debug_handler.setFormatter(detailed_formatter)
-    logger.addHandler(debug_handler)
-
-    # Info file handler (info and above)
-    info_handler = logging.FileHandler(os.path.join(log_dir, log_config['files']['info']))
-    info_handler.setLevel(getattr(logging, log_config['levels']['file_info']))
-    info_handler.setFormatter(simple_formatter)
-    logger.addHandler(info_handler)
-
-    # Warning file handler (warnings and errors only)
-    warning_handler = logging.FileHandler(os.path.join(log_dir, log_config['files']['warnings']))
-    warning_handler.setLevel(getattr(logging, log_config['levels']['file_warning']))
-    warning_handler.setFormatter(simple_formatter)
-    logger.addHandler(warning_handler)
-
-    # Console handler for important messages
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(getattr(logging, log_config['levels']['console']))
-    console_handler.setFormatter(simple_formatter)
-    logger.addHandler(console_handler)
-
-    return logger
-
-
 # Initialize logger
-logger = setup_logging()
+logger = setup_logging(CONFIG)
 
 # === Server-to-Server OAuth Credentials ===
 ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
