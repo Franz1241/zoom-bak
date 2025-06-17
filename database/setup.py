@@ -2,6 +2,7 @@
 Database setup module for Zoom Backup application.
 Handles table creation, indexes, and database schema setup.
 """
+
 from logging_config import get_logger
 
 logger = get_logger()
@@ -10,7 +11,7 @@ logger = get_logger()
 def setup_database(cursor, conn, version: str):
     """
     Create tables and indexes if they don't exist.
-    
+
     Args:
         cursor: Database cursor
         conn: Database connection
@@ -123,7 +124,7 @@ def setup_database(cursor, conn, version: str):
 def _create_indexes(cursor, version: str):
     """
     Create database indexes for better performance.
-    
+
     Args:
         cursor: Database cursor
         version: Version string for table naming
@@ -131,10 +132,11 @@ def _create_indexes(cursor, version: str):
     indexes = [
         f"CREATE INDEX IF NOT EXISTS idx_inventory_user_email ON zoom_recording_inventory_{version}(user_email);",
         f"CREATE INDEX IF NOT EXISTS idx_inventory_start_time ON zoom_recording_inventory_{version}(start_time);",
-        f"CREATE INDEX IF NOT EXISTS idx_inventory_status ON zoom_recording_inventory_{version}(status);"
+        f"CREATE INDEX IF NOT EXISTS idx_inventory_status ON zoom_recording_inventory_{version}(status);",
     ]
-    
+
     for index_sql in indexes:
         cursor.execute(index_sql)
-    
-    logger.debug(f"Created {len(indexes)} indexes for version {version}") 
+
+    logger.debug(f"Created {len(indexes)} indexes for version {version}")
+

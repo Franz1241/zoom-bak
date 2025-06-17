@@ -2,6 +2,7 @@
 Database inventory operations for Zoom Backup application.
 Handles recording inventory management and queries.
 """
+
 import json
 from logging_config import get_logger
 from utils.misc import db_retry
@@ -10,12 +11,25 @@ logger = get_logger()
 
 
 @db_retry(tries=3, delay=1, backoff=2, logger=logger)
-def insert_meeting_inventory(cursor, conn, recording_type, recording_id, meeting_id, 
-                           user_email, topic, start_time, duration, file_type, 
-                           file_size, download_url, raw_data, version="v4"):
+def insert_meeting_inventory(
+    cursor,
+    conn,
+    recording_type,
+    recording_id,
+    meeting_id,
+    user_email,
+    topic,
+    start_time,
+    duration,
+    file_type,
+    file_size,
+    download_url,
+    raw_data,
+    version="v4",
+):
     """
     Insert meeting recording into inventory.
-    
+
     Args:
         cursor: Database cursor
         conn: Database connection
@@ -31,7 +45,7 @@ def insert_meeting_inventory(cursor, conn, recording_type, recording_id, meeting
         download_url: Download URL
         raw_data: Raw API response data
         version: Database version for table naming
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
@@ -61,11 +75,22 @@ def insert_meeting_inventory(cursor, conn, recording_type, recording_id, meeting
 
 
 @db_retry(tries=3, delay=1, backoff=2, logger=logger)
-def insert_phone_inventory(cursor, conn, recording_id, user_email, start_time, 
-                         duration, file_type, file_size, download_url, raw_data, version="v4"):
+def insert_phone_inventory(
+    cursor,
+    conn,
+    recording_id,
+    user_email,
+    start_time,
+    duration,
+    file_type,
+    file_size,
+    download_url,
+    raw_data,
+    version="v4",
+):
     """
     Insert phone recording into inventory.
-    
+
     Args:
         cursor: Database cursor
         conn: Database connection
@@ -78,7 +103,7 @@ def insert_phone_inventory(cursor, conn, recording_id, user_email, start_time,
         download_url: Download URL
         raw_data: Raw API response data
         version: Database version for table naming
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
@@ -108,11 +133,11 @@ def insert_phone_inventory(cursor, conn, recording_id, user_email, start_time,
 def get_undownloaded_recordings(cursor, version="v4"):
     """
     Get all recordings that haven't been downloaded yet.
-    
+
     Args:
         cursor: Database cursor
         version: Database version for table naming
-        
+
     Returns:
         list: List of recording tuples
     """
@@ -127,11 +152,18 @@ def get_undownloaded_recordings(cursor, version="v4"):
 
 
 @db_retry(tries=3, delay=1, backoff=2, logger=logger)
-def update_recording_status(cursor, conn, inventory_id, status, downloaded_at=None, 
-                          error_message=None, version="v4"):
+def update_recording_status(
+    cursor,
+    conn,
+    inventory_id,
+    status,
+    downloaded_at=None,
+    error_message=None,
+    version="v4",
+):
     """
     Update the status of a recording in inventory.
-    
+
     Args:
         cursor: Database cursor
         conn: Database connection
@@ -140,7 +172,7 @@ def update_recording_status(cursor, conn, inventory_id, status, downloaded_at=No
         downloaded_at: Optional download timestamp
         error_message: Optional error message
         version: Database version for table naming
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
@@ -159,11 +191,11 @@ def update_recording_status(cursor, conn, inventory_id, status, downloaded_at=No
 def get_discovery_summary(cursor, version="v4"):
     """
     Get summary of discovered recordings by type.
-    
+
     Args:
         cursor: Database cursor
         version: Database version for table naming
-        
+
     Returns:
         list: List of (recording_type, count, earliest, latest) tuples
     """
@@ -180,11 +212,11 @@ def get_discovery_summary(cursor, version="v4"):
 def get_2020_recordings(cursor, version="v4"):
     """
     Get recordings from November-December 2020.
-    
+
     Args:
         cursor: Database cursor
         version: Database version for table naming
-        
+
     Returns:
         list: List of (recording_type, user_email, count) tuples
     """
@@ -201,11 +233,11 @@ def get_2020_recordings(cursor, version="v4"):
 def get_status_counts(cursor, version="v4"):
     """
     Get count of recordings by status.
-    
+
     Args:
         cursor: Database cursor
         version: Database version for table naming
-        
+
     Returns:
         list: List of (status, count) tuples
     """
@@ -218,11 +250,11 @@ def get_status_counts(cursor, version="v4"):
 def get_year_distribution(cursor, version="v4"):
     """
     Get distribution of recordings by year and type.
-    
+
     Args:
         cursor: Database cursor
         version: Database version for table naming
-        
+
     Returns:
         list: List of (year, count, recording_type) tuples
     """
@@ -238,11 +270,11 @@ def get_year_distribution(cursor, version="v4"):
 def get_download_counts(cursor, version="v4"):
     """
     Get counts of downloaded recordings by type.
-    
+
     Args:
         cursor: Database cursor
         version: Database version for table naming
-        
+
     Returns:
         tuple: (meeting_count, phone_count)
     """
@@ -256,4 +288,5 @@ def get_download_counts(cursor, version="v4"):
     result = cursor.fetchone()
     phone_count = result[0] if result else 0
 
-    return meeting_count, phone_count 
+    return meeting_count, phone_count
+

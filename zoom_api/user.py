@@ -2,6 +2,7 @@
 Zoom API user management module.
 Handles user-related API operations.
 """
+
 from urllib.parse import quote
 from utils.api import make_api_request
 from logging_config import get_logger
@@ -12,11 +13,11 @@ logger = get_logger()
 def get_zoom_users(token, config):
     """
     Get all Zoom users with pagination.
-    
+
     Args:
         token: Access token
         config: Configuration dictionary
-        
+
     Returns:
         list: List of user email addresses
     """
@@ -24,7 +25,7 @@ def get_zoom_users(token, config):
     next_page_token = None
 
     while True:
-        params = {"page_size": config['api']['page_sizes']['users'], "status": "active"}
+        params = {"page_size": config["api"]["page_sizes"]["users"], "status": "active"}
         if next_page_token:
             params["next_page_token"] = next_page_token
 
@@ -48,12 +49,12 @@ def get_zoom_users(token, config):
 def get_user_info(user_email, token, config):
     """
     Get detailed information for a specific user.
-    
+
     Args:
         user_email: User email address
         token: Access token
         config: Configuration dictionary
-        
+
     Returns:
         dict: User information or None if failed
     """
@@ -64,12 +65,12 @@ def get_user_info(user_email, token, config):
 def get_user_settings(user_email, token, config):
     """
     Get user settings.
-    
+
     Args:
         user_email: User email address
         token: Access token
         config: Configuration dictionary
-        
+
     Returns:
         dict: User settings or None if failed
     """
@@ -80,32 +81,34 @@ def get_user_settings(user_email, token, config):
 def is_user_active(user_email, token, config):
     """
     Check if a user is active.
-    
+
     Args:
         user_email: User email address
         token: Access token
         config: Configuration dictionary
-        
+
     Returns:
         bool: True if user is active, False otherwise
     """
     user_info = get_user_info(user_email, token, config)
     if not user_info:
         return False
-    
+
     return user_info.get("status") == "active"
 
 
 def validate_user_email(user_email):
     """
     Basic validation for user email format.
-    
+
     Args:
         user_email: Email address to validate
-        
+
     Returns:
         bool: True if email format is valid
     """
     import re
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return bool(re.match(pattern, user_email)) 
+
+    pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+    return bool(re.match(pattern, user_email))
+

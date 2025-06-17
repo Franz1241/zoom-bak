@@ -4,7 +4,11 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from logging_config import setup_logging
 from database.setup import setup_database
-from database.inventory import get_status_counts, get_year_distribution, get_download_counts
+from database.inventory import (
+    get_status_counts,
+    get_year_distribution,
+    get_download_counts,
+)
 from zoom_api.auth import get_access_token
 from zoom_api.user import get_zoom_users
 from zoom_api.discovery import discover_all_recordings
@@ -14,6 +18,7 @@ load_dotenv()
 
 # Load configuration
 from utils.misc import load_config, validate_config
+
 CONFIG = load_config()
 validate_config(CONFIG)
 
@@ -27,15 +32,16 @@ ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID")
 ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET")
 
 # === Configuration Values ===
-VERSION = CONFIG['version']
-POSTGRES_URL = CONFIG['database']['url']
-BASE_DIR = CONFIG['directories']['base_dir'] + "_" + VERSION
-START_DATE = CONFIG['dates']['start_date']
+VERSION = CONFIG["version"]
+POSTGRES_URL = CONFIG["database"]["url"]
+BASE_DIR = CONFIG["directories"]["base_dir"] + "_" + VERSION
+START_DATE = CONFIG["dates"]["start_date"]
 END_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 # === Database Connection ===
 conn = psycopg2.connect(POSTGRES_URL)
 cursor = conn.cursor()
+
 
 # === Main Process ===
 def main():

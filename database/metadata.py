@@ -2,6 +2,7 @@
 Database metadata operations for Zoom Backup application.
 Handles saving of meeting and phone recording metadata.
 """
+
 import json
 from logging_config import get_logger
 from utils.misc import db_retry
@@ -10,11 +11,19 @@ logger = get_logger()
 
 
 @db_retry(tries=3, delay=1, backoff=2, logger=logger)
-def save_meeting_metadata(cursor, conn, meeting, user_email, file_info, local_path, 
-                         transcript_path=None, version="v4"):
+def save_meeting_metadata(
+    cursor,
+    conn,
+    meeting,
+    user_email,
+    file_info,
+    local_path,
+    transcript_path=None,
+    version="v4",
+):
     """
     Save meeting recording metadata with fallback strategy.
-    
+
     Args:
         cursor: Database cursor
         conn: Database connection
@@ -24,7 +33,7 @@ def save_meeting_metadata(cursor, conn, meeting, user_email, file_info, local_pa
         local_path: Local file path
         transcript_path: Optional transcript file path
         version: Database version for table naming
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
@@ -68,7 +77,9 @@ def save_meeting_metadata(cursor, conn, meeting, user_email, file_info, local_pa
         ),
     )
     conn.commit()
-    logger.debug(f"Successfully saved meeting metadata for: {meeting.get('topic', 'No topic')}")
+    logger.debug(
+        f"Successfully saved meeting metadata for: {meeting.get('topic', 'No topic')}"
+    )
     return True
 
 
@@ -76,7 +87,7 @@ def save_meeting_metadata(cursor, conn, meeting, user_email, file_info, local_pa
 def save_phone_metadata(cursor, conn, recording, user_email, local_path, version="v4"):
     """
     Save phone recording metadata with fallback strategy.
-    
+
     Args:
         cursor: Database cursor
         conn: Database connection
@@ -84,12 +95,12 @@ def save_phone_metadata(cursor, conn, recording, user_email, local_path, version
         user_email: User email address
         local_path: Local file path
         version: Database version for table naming
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
     logger.debug(f"Saving metadata for phone recording: {recording.get('id', 'No ID')}")
-    
+
     fallback_data = {
         "recording": recording,
         "user_email": user_email,
@@ -128,16 +139,26 @@ def save_phone_metadata(cursor, conn, recording, user_email, local_path, version
         ),
     )
     conn.commit()
-    logger.debug(f"Successfully saved phone metadata for: {recording.get('id', 'No ID')}")
+    logger.debug(
+        f"Successfully saved phone metadata for: {recording.get('id', 'No ID')}"
+    )
     return True
 
 
 @db_retry(tries=3, delay=1, backoff=2, logger=logger)
-def save_webinar_metadata(cursor, conn, webinar, user_email, file_info, local_path, 
-                         transcript_path=None, version="v4"):
+def save_webinar_metadata(
+    cursor,
+    conn,
+    webinar,
+    user_email,
+    file_info,
+    local_path,
+    transcript_path=None,
+    version="v4",
+):
     """
     Save webinar recording metadata with fallback strategy.
-    
+
     Args:
         cursor: Database cursor
         conn: Database connection
@@ -147,7 +168,7 @@ def save_webinar_metadata(cursor, conn, webinar, user_email, file_info, local_pa
         local_path: Local file path
         transcript_path: Optional transcript file path
         version: Database version for table naming
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
@@ -190,5 +211,8 @@ def save_webinar_metadata(cursor, conn, webinar, user_email, file_info, local_pa
         ),
     )
     conn.commit()
-    logger.debug(f"Successfully saved webinar metadata for: {webinar.get('topic', 'No topic')}")
-    return True 
+    logger.debug(
+        f"Successfully saved webinar metadata for: {webinar.get('topic', 'No topic')}"
+    )
+    return True
+

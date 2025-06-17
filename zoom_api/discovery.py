@@ -2,10 +2,14 @@
 Zoom API recording discovery module.
 Handles discovery and cataloging of recordings before download.
 """
+
 from urllib.parse import quote
 from utils.api import make_api_request, generate_date_ranges
 from database.inventory import (
-    insert_meeting_inventory, insert_phone_inventory, get_discovery_summary, get_2020_recordings
+    insert_meeting_inventory,
+    insert_phone_inventory,
+    get_discovery_summary,
+    get_2020_recordings,
 )
 from logging_config import get_logger
 
@@ -15,7 +19,7 @@ logger = get_logger()
 def discover_all_recordings(user_emails, token, config, cursor, conn, version):
     """
     Phase 1: Discover and catalog all recordings before downloading.
-    
+
     Args:
         user_emails: List of user email addresses
         token: Access token
@@ -31,13 +35,15 @@ def discover_all_recordings(user_emails, token, config, cursor, conn, version):
 
         try:
             discover_meeting_recordings(email, token, config, cursor, conn, version)
-            
+
             # Only discover phone recordings if enabled in config
-            if config.get('processing', {}).get('enable_phone_recordings', True):
+            if config.get("processing", {}).get("enable_phone_recordings", True):
                 discover_phone_recordings(email, token, config, cursor, conn, version)
             else:
-                logger.debug(f"Phone recordings disabled in config, skipping for {email}")
-                
+                logger.debug(
+                    f"Phone recordings disabled in config, skipping for {email}"
+                )
+
             # discover_webinar_recordings(email, token, config, cursor, conn, version)  # Add if needed
 
         except Exception as e:
@@ -63,7 +69,7 @@ def discover_all_recordings(user_emails, token, config, cursor, conn, version):
 def discover_meeting_recordings(user_email, token, config, cursor, conn, version):
     """
     Discover meeting recordings and store in inventory.
-    
+
     Args:
         user_email: User email address
         token: Access token
@@ -74,10 +80,11 @@ def discover_meeting_recordings(user_email, token, config, cursor, conn, version
     """
     logger.debug(f"Discovering meeting recordings for: {user_email}")
 
-    start_date = config['dates']['start_date']
+    start_date = config["dates"]["start_date"]
     from datetime import datetime, timezone
+
     end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    
+
     date_ranges = generate_date_ranges(start_date, end_date, config)
     total_found = 0
 
@@ -86,7 +93,11 @@ def discover_meeting_recordings(user_email, token, config, cursor, conn, version
         range_found = 0
 
         while True:
-            params = {"from": range_start, "to": range_end, "page_size": config['api']['page_sizes']['recordings']}
+            params = {
+                "from": range_start,
+                "to": range_end,
+                "page_size": config["api"]["page_sizes"]["recordings"],
+            }
             if next_page_token:
                 params["next_page_token"] = next_page_token
 
@@ -103,12 +114,20 @@ def discover_meeting_recordings(user_email, token, config, cursor, conn, version
                         and file_info.get("status") == "completed"
                     ):
                         if insert_meeting_inventory(
-                            cursor, conn, "meeting", file_info.get("id"), 
-                            meeting.get("uuid"), user_email, meeting.get("topic"),
-                            meeting.get("start_time"), meeting.get("duration"),
-                            file_info.get("file_type"), file_info.get("file_size"),
+                            cursor,
+                            conn,
+                            "meeting",
+                            file_info.get("id"),
+                            meeting.get("uuid"),
+                            user_email,
+                            meeting.get("topic"),
+                            meeting.get("start_time"),
+                            meeting.get("duration"),
+                            file_info.get("file_type"),
+                            file_info.get("file_size"),
                             file_info.get("download_url"),
-                            {"meeting": meeting, "file_info": file_info}, version
+                            {"meeting": meeting, "file_info": file_info},
+                            version,
                         ):
                             range_found += 1
 
@@ -131,7 +150,7 @@ def discover_phone_recordings(user_email, token, config, cursor, conn, version):
     """
     Discover phone recordings and store in inventory.
     Uses smaller date ranges like meeting recordings to avoid API timeouts.
-    
+
     Args:
         user_email: User email address
         token: Access token
@@ -142,10 +161,11 @@ def discover_phone_recordings(user_email, token, config, cursor, conn, version):
     """
     logger.debug(f"Discovering phone recordings for: {user_email}")
 
-    start_date = config['dates']['start_date']
+    start_date = config["dates"]["start_date"]
     from datetime import datetime, timezone
+
     end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    
+
     # Use date ranges for phone recordings too to avoid large date spans
     date_ranges = generate_date_ranges(start_date, end_date, config)
     total_found = 0
@@ -155,7 +175,11 @@ def discover_phone_recordings(user_email, token, config, cursor, conn, version):
         range_found = 0
 
         while True:
-            params = {"from": range_start, "to": range_end, "page_size": config['api']['page_sizes']['phone_recordings']}
+            params = {
+                "from": range_start,
+                "to": range_end,
+                "page_size": config["api"]["page_sizes"]["phone_recordings"],
+            }
             if next_page_token:
                 params["next_page_token"] = next_page_token
 
@@ -164,20 +188,31 @@ def discover_phone_recordings(user_email, token, config, cursor, conn, version):
 
             if not data:
                 # API call failed (likely 400/404 for no phone license) - this is expected
-                logger.debug(f"No phone recordings data returned for {user_email} in {range_start} to {range_end} - likely no phone license")
+                logger.debug(
+                    f"No phone recordings data returned for {user_email} in {range_start} to {range_end} - likely no phone license"
+                )
                 break
-                
+
             if "recordings" not in data:
-                logger.debug(f"No recordings field in response for {user_email} in {range_start} to {range_end}")
+                logger.debug(
+                    f"No recordings field in response for {user_email} in {range_start} to {range_end}"
+                )
                 break
 
             for recording in data["recordings"]:
                 if recording.get("download_url"):
                     if insert_phone_inventory(
-                        cursor, conn, recording.get("id"), user_email,
-                        recording.get("start_time"), recording.get("duration"),
-                        "mp3", recording.get("file_size"), recording.get("download_url"),
-                        {"recording": recording}, version
+                        cursor,
+                        conn,
+                        recording.get("id"),
+                        user_email,
+                        recording.get("start_time"),
+                        recording.get("duration"),
+                        "mp3",
+                        recording.get("file_size"),
+                        recording.get("download_url"),
+                        {"recording": recording},
+                        version,
                     ):
                         range_found += 1
 
@@ -199,7 +234,7 @@ def discover_phone_recordings(user_email, token, config, cursor, conn, version):
 def discover_webinar_recordings(user_email, token, config, cursor, conn, version):
     """
     Discover webinar recordings and store in inventory.
-    
+
     Args:
         user_email: User email address
         token: Access token
@@ -210,10 +245,11 @@ def discover_webinar_recordings(user_email, token, config, cursor, conn, version
     """
     logger.debug(f"Discovering webinar recordings for: {user_email}")
 
-    start_date = config['dates']['start_date']
+    start_date = config["dates"]["start_date"]
     from datetime import datetime, timezone
+
     end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    
+
     date_ranges = generate_date_ranges(start_date, end_date, config)
     total_found = 0
 
@@ -222,11 +258,17 @@ def discover_webinar_recordings(user_email, token, config, cursor, conn, version
         range_found = 0
 
         while True:
-            params = {"from": range_start, "to": range_end, "page_size": config['api']['page_sizes']['recordings']}
+            params = {
+                "from": range_start,
+                "to": range_end,
+                "page_size": config["api"]["page_sizes"]["recordings"],
+            }
             if next_page_token:
                 params["next_page_token"] = next_page_token
 
-            url = f"https://api.zoom.us/v2/users/{quote(user_email)}/webinars/recordings"
+            url = (
+                f"https://api.zoom.us/v2/users/{quote(user_email)}/webinars/recordings"
+            )
             data = make_api_request(url, token, config, params)
 
             if not data or "webinars" not in data:
@@ -240,12 +282,20 @@ def discover_webinar_recordings(user_email, token, config, cursor, conn, version
                     ):
                         # Use similar structure to meeting recordings but for webinars
                         if insert_meeting_inventory(  # Reuse the same function with webinar type
-                            cursor, conn, "webinar", file_info.get("id"), 
-                            webinar.get("uuid"), user_email, webinar.get("topic"),
-                            webinar.get("start_time"), webinar.get("duration"),
-                            file_info.get("file_type"), file_info.get("file_size"),
+                            cursor,
+                            conn,
+                            "webinar",
+                            file_info.get("id"),
+                            webinar.get("uuid"),
+                            user_email,
+                            webinar.get("topic"),
+                            webinar.get("start_time"),
+                            webinar.get("duration"),
+                            file_info.get("file_type"),
+                            file_info.get("file_size"),
                             file_info.get("download_url"),
-                            {"webinar": webinar, "file_info": file_info}, version
+                            {"webinar": webinar, "file_info": file_info},
+                            version,
                         ):
                             range_found += 1
 
@@ -261,4 +311,5 @@ def discover_webinar_recordings(user_email, token, config, cursor, conn, version
 
     conn.commit()
     if total_found > 0:
-        logger.info(f"Discovered {total_found} webinar recordings for {user_email}") 
+        logger.info(f"Discovered {total_found} webinar recordings for {user_email}")
+
