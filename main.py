@@ -4,6 +4,7 @@ import os
 import requests
 import psycopg2
 import logging
+import yaml
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
@@ -11,16 +12,38 @@ from urllib.parse import quote
 
 load_dotenv()
 
+# Load configuration from YAML file
+def load_config():
+    """Load configuration from config.yaml"""
+    config_path = "config.yaml"
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Configuration file {config_path} not found")
+    
+    with open(config_path, 'r') as file:
+        config = yaml.safe_load(file)
+    
+    # Replace version placeholder in base_dir
+    if 'directories' in config and 'base_dir' in config['directories']:
+        config['directories']['base_dir'] = config['directories']['base_dir'].format(
+            version=config['version']
+        )
+    
+    return config
+
+# Load configuration
+CONFIG = load_config()
+
 
 # === Setup Logging ===
 def setup_logging():
     """Setup logging with separate files for different levels"""
-    log_dir = "./logs"
+    log_config = CONFIG['logging']
+    log_dir = CONFIG['directories']['log_dir']
     os.makedirs(log_dir, exist_ok=True)
 
     # Create logger
     logger = logging.getLogger("zoom_backup")
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(getattr(logging, log_config['levels']['file_debug']))
 
     # Clear any existing handlers
     logger.handlers.clear()
@@ -32,28 +55,26 @@ def setup_logging():
     simple_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
     # Debug file handler (all messages)
-    debug_handler = logging.FileHandler(os.path.join(log_dir, "zoom_backup_debug.log"))
-    debug_handler.setLevel(logging.DEBUG)
+    debug_handler = logging.FileHandler(os.path.join(log_dir, log_config['files']['debug']))
+    debug_handler.setLevel(getattr(logging, log_config['levels']['file_debug']))
     debug_handler.setFormatter(detailed_formatter)
     logger.addHandler(debug_handler)
 
     # Info file handler (info and above)
-    info_handler = logging.FileHandler(os.path.join(log_dir, "zoom_backup_info.log"))
-    info_handler.setLevel(logging.INFO)
+    info_handler = logging.FileHandler(os.path.join(log_dir, log_config['files']['info']))
+    info_handler.setLevel(getattr(logging, log_config['levels']['file_info']))
     info_handler.setFormatter(simple_formatter)
     logger.addHandler(info_handler)
 
     # Warning file handler (warnings and errors only)
-    warning_handler = logging.FileHandler(
-        os.path.join(log_dir, "zoom_backup_warnings.log")
-    )
-    warning_handler.setLevel(logging.WARNING)
+    warning_handler = logging.FileHandler(os.path.join(log_dir, log_config['files']['warnings']))
+    warning_handler.setLevel(getattr(logging, log_config['levels']['file_warning']))
     warning_handler.setFormatter(simple_formatter)
     logger.addHandler(warning_handler)
 
     # Console handler for important messages
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(getattr(logging, log_config['levels']['console']))
     console_handler.setFormatter(simple_formatter)
     logger.addHandler(console_handler)
 
@@ -68,19 +89,16 @@ ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID")
 ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID")
 ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET")
 
-# === Version Configuration ===
-VERSION = "v4"
+# === Configuration Values ===
+VERSION = CONFIG['version']
+POSTGRES_URL = CONFIG['database']['url']
+BASE_DIR = CONFIG['directories']['base_dir'] + "_" + VERSION
+START_DATE = CONFIG['dates']['start_date']
+END_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-# === PostgreSQL ===
-POSTGRES_URL = "postgresql://postgres:postgres@localhost:5432/zoom_backups"
+# === Database Connection ===
 conn = psycopg2.connect(POSTGRES_URL)
 cursor = conn.cursor()
-
-# === Config ===
-BASE_DIR = f"./zoom_backups_{VERSION}"
-START_DATE = "2020-11-01"
-END_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-RATE_LIMIT_DELAY = 0.5  # Seconds between API calls
 
 # Global token variable for automatic refresh
 access_token = None
@@ -223,8 +241,8 @@ def get_access_token(force_refresh=False):
         access_token = token_data["access_token"]
         expires_in = token_data.get("expires_in", 3600)  # Default 1 hour
         token_expires_at = datetime.now() + relativedelta(
-            seconds=expires_in - 300
-        )  # Refresh 5 min early
+            seconds=expires_in - CONFIG['api']['token_refresh_buffer']
+        )  # Refresh early based on config
 
         logger.info("Access token refreshed successfully")
         return access_token
@@ -242,14 +260,17 @@ def create_dirs(user_email, data_type="meetings"):
     return user_dir
 
 
-def download_file(url, token, dest_path, file_description="file", retries=3):
+def download_file(url, token, dest_path, file_description="file", retries=None):
     """Download file with proper error handling and logging"""
+    if retries is None:
+        retries = CONFIG['api']['retries']
+    
     logger.debug(f"Downloading {file_description} to {dest_path}")
 
     headers = {"Authorization": f"Bearer {token}"}
     for attempt in range(retries):
         try:
-            r = requests.get(url, headers=headers, stream=True, timeout=60)
+            r = requests.get(url, headers=headers, stream=True, timeout=CONFIG['api']['request_timeout'])
             r.raise_for_status()
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
@@ -269,7 +290,7 @@ def download_file(url, token, dest_path, file_description="file", retries=3):
                 f"Download failed ({attempt + 1}/{retries}) for {file_description} — {e}"
             )
             if attempt < retries - 1:
-                time.sleep(60)
+                time.sleep(CONFIG['api']['sleep_durations']['download_retry'])
 
     logger.error(f"Failed to download {file_description} after {retries} attempts")
     return False
@@ -283,27 +304,22 @@ def get_file_extension(file_info):
 
     file_type = file_info.get("file_type", "").lower()
 
-    # Map common file types to extensions
-    type_mapping = {
-        "mp4": "mp4",
-        "m4a": "m4a",
-        "vtt": "vtt",
-        "transcript": "vtt",
-        "chat": "txt",
-        "cc": "vtt",
-        "audio_transcript": "vtt",
-    }
+    # Get mapping from config
+    type_mapping = CONFIG['file_extensions']
 
     return type_mapping.get(file_type, file_type or "unknown")
 
 
 # === API Utilities ===
-def make_api_request(url, token, params=None, retries=3):
+def make_api_request(url, token, params=None, retries=None):
     """Make API request with rate limiting and error handling"""
+    if retries is None:
+        retries = CONFIG['api']['retries']
+    
     headers = {"Authorization": f"Bearer {token}"}
 
     for attempt in range(retries):
-        time.sleep(RATE_LIMIT_DELAY)
+        time.sleep(CONFIG['api']['rate_limit_delay'])
         response = None
 
         try:
@@ -322,7 +338,7 @@ def make_api_request(url, token, params=None, retries=3):
             if response is None:
                 logger.error(f"API Error: {e}")
                 if attempt < retries - 1:
-                    time.sleep(30)
+                    time.sleep(CONFIG['api']['sleep_durations']['retry'])
                 continue
 
             if response.status_code == 401:  # Unauthorized
@@ -330,7 +346,7 @@ def make_api_request(url, token, params=None, retries=3):
                 if attempt < retries - 1:
                     token = get_access_token(force_refresh=True)
                     headers["Authorization"] = f"Bearer {token}"
-                    time.sleep(5)
+                    time.sleep(CONFIG['api']['sleep_durations']['token_refresh'])
                     continue
                 else:
                     logger.error(
@@ -339,8 +355,8 @@ def make_api_request(url, token, params=None, retries=3):
                     return None
 
             elif response.status_code == 429:  # Rate limited
-                logger.warning("Rate limited, waiting 60 seconds...")
-                time.sleep(60)
+                logger.warning(f"Rate limited, waiting {CONFIG['api']['sleep_durations']['rate_limit']} seconds...")
+                time.sleep(CONFIG['api']['sleep_durations']['rate_limit'])
                 continue
             elif response.status_code in [400, 404] and "phone" in url:
                 # Many users don't have phone licenses - this is expected
@@ -354,22 +370,25 @@ def make_api_request(url, token, params=None, retries=3):
                     f"Response: {response.text if response else 'No response'}"
                 )
                 if attempt < retries - 1:
-                    time.sleep(30)
+                    time.sleep(CONFIG['api']['sleep_durations']['retry'])
                 continue
                 return None
 
         except Exception as e:
             logger.error(f"Request Error: {e}")
             if attempt < retries - 1:
-                time.sleep(30)
+                time.sleep(CONFIG['api']['sleep_durations']['retry'])
                 continue
             return None
 
     return None
 
 
-def generate_date_ranges(start_date, end_date, months_per_range=6):
+def generate_date_ranges(start_date, end_date, months_per_range=None):
     """Generate smaller date ranges to avoid API limits"""
+    if months_per_range is None:
+        months_per_range = CONFIG['processing']['months_per_range']
+    
     ranges = []
     current = datetime.strptime(start_date, "%Y-%m-%d")
     end = datetime.strptime(end_date, "%Y-%m-%d")
@@ -436,7 +455,7 @@ def discover_meeting_recordings(user_email, token):
     """Discover meeting recordings and store in inventory"""
     logger.debug(f"Discovering meeting recordings for: {user_email}")
 
-    date_ranges = generate_date_ranges(START_DATE, END_DATE, months_per_range=6)
+    date_ranges = generate_date_ranges(START_DATE, END_DATE)
     total_found = 0
 
     for range_start, range_end in date_ranges:
@@ -444,7 +463,7 @@ def discover_meeting_recordings(user_email, token):
         range_found = 0
 
         while True:
-            params = {"from": range_start, "to": range_end, "page_size": 30}
+            params = {"from": range_start, "to": range_end, "page_size": CONFIG['api']['page_sizes']['recordings']}
             if next_page_token:
                 params["next_page_token"] = next_page_token
 
@@ -514,7 +533,7 @@ def discover_phone_recordings(user_email, token):
     total_found = 0
 
     while True:
-        params = {"from": START_DATE, "to": END_DATE, "page_size": 30}
+        params = {"from": START_DATE, "to": END_DATE, "page_size": CONFIG['api']['page_sizes']['phone_recordings']}
         if next_page_token:
             params["next_page_token"] = next_page_token
 
@@ -814,7 +833,7 @@ def get_zoom_users(token):
     next_page_token = None
 
     while True:
-        params = {"page_size": 300, "status": "active"}
+        params = {"page_size": CONFIG['api']['page_sizes']['users'], "status": "active"}
         if next_page_token:
             params["next_page_token"] = next_page_token
 

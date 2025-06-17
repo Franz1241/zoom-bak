@@ -1,0 +1,53 @@
+
+version: "v4"
+
+database:
+  url: "postgresql://postgres:postgres@localhost:5432/zoom_backups"
+
+directories:
+  base_dir: "./zoom_backups"
+  log_dir: "./logs"
+
+dates:
+  start_date: "2020-11-01"
+  
+api:
+  rate_limit_delay: 0.5  
+  request_timeout: 60    
+  retries: 3
+  token_refresh_buffer: 300  
+  
+  page_sizes:
+    recordings: 30
+    users: 300
+    phone_recordings: 30
+  
+  sleep_durations:
+    rate_limit: 60      
+    retry: 30           
+    token_refresh: 5    
+    download_retry: 60  
+
+processing:
+  months_per_range: 6   
+  
+logging:
+  levels:
+    console: "INFO"
+    file_debug: "DEBUG" 
+    file_info: "INFO"
+    file_warning: "WARNING"
+  
+  files:
+    debug: "zoom_backup_debug.log"
+    info: "zoom_backup_info.log"
+    warnings: "zoom_backup_warnings.log"
+
+file_extensions:
+  mp4: "mp4"
+  m4a: "m4a" 
+  vtt: "vtt"
+  transcript: "vtt"
+  chat: "txt"
+  cc: "vtt"
+  audio_transcript: "vtt" 
