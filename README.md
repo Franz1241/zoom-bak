@@ -1,5 +1,9 @@
 # Zoom Recordings Backup Tool
 
+## Why? (non-AI gen)
+
+I suffered a lot from backing up the Zoom data before migrating to a new platform. Its really amazing how Zoom doesnt provide a backup all option at all. So I decided to make a program that does it for me and share it so you dont have to suffer the same pain lol. Feel free to copy/contribute to this code, ill probably just use it once and then try to keep up if any changes on the Zoom API happen
+
 ## Overview
 
 This Python application provides a comprehensive backup solution for Zoom recordings, including meeting recordings, phone call recordings, and webinar recordings. It uses Zoom's Server-to-Server OAuth API to authenticate and download all available recordings from your Zoom account to local storage while maintaining metadata in a PostgreSQL database.
@@ -47,26 +51,31 @@ zoom_bak_v2/
 ### Key Components
 
 #### Authentication Module (`zoom_api/auth.py`)
+
 - Handles OAuth token management with automatic refresh
 - Built-in retry logic for authentication failures
 - Token expiration tracking and proactive refresh
 
 #### Discovery Module (`zoom_api/discovery.py`)
+
 - Discovers recordings across all users and date ranges
 - Handles pagination and rate limiting
 - Stores findings in the inventory database
 
 #### Download Module (`zoom_api/download.py`)
+
 - Processes the recording inventory for downloads
 - Manages file organization and metadata storage
 - Implements download retry logic with exponential backoff
 
 #### Database Modules (`database/`)
+
 - **setup.py**: Manages database schema and versioning
 - **inventory.py**: Handles recording inventory operations
 - **metadata.py**: Stores and retrieves recording metadata
 
 #### Utility Modules (`utils/`)
+
 - **misc.py**: Configuration management and retry decorators
 - **api.py**: API request helpers with error handling
 - **file.py**: File operations and path management
@@ -89,34 +98,34 @@ directories:
 
 dates:
   start_date: "2020-11-01"
-  
+
 api:
-  rate_limit_delay: 0.5  
-  request_timeout: 60    
+  rate_limit_delay: 0.5
+  request_timeout: 60
   retries: 3
-  token_refresh_buffer: 300  
-  
+  token_refresh_buffer: 300
+
   page_sizes:
     recordings: 30
     users: 300
     phone_recordings: 30
-  
+
   sleep_durations:
-    rate_limit: 60      
-    retry: 30           
-    token_refresh: 5    
-    download_retry: 60  
+    rate_limit: 60
+    retry: 30
+    token_refresh: 5
+    download_retry: 60
 
 processing:
-  months_per_range: 6   
-  
+  months_per_range: 6
+
 logging:
   levels:
     console: "INFO"
-    file_debug: "DEBUG" 
+    file_debug: "DEBUG"
     file_info: "INFO"
     file_warning: "WARNING"
-  
+
   files:
     debug: "zoom_backup_debug.log"
     info: "zoom_backup_info.log"
@@ -134,18 +143,21 @@ logging:
 ### Setup
 
 1. **Clone the repository:**
+
    ```bash
    git clone <repository-url>
    cd zoom_bak_v2
    ```
 
 2. **Install dependencies using uv:**
+
    ```bash
    uv sync
    ```
 
 3. **Set up environment variables:**
    Create a `.env` file in the project root:
+
    ```env
    ZOOM_ACCOUNT_ID=your_zoom_account_id
    ZOOM_CLIENT_ID=your_zoom_client_id
@@ -260,6 +272,7 @@ The application implements sophisticated retry logic:
 ### Logging System
 
 Multi-level logging system with:
+
 - **Console Output**: Real-time progress information
 - **Debug Logs**: Detailed technical information for troubleshooting
 - **Info Logs**: General process information and progress
@@ -270,15 +283,19 @@ Multi-level logging system with:
 ### Core Tables
 
 #### `zoom_recording_inventory_v4`
+
 Master inventory of all discovered recordings with download status tracking.
 
 #### `zoom_recordings_v4`
+
 Meeting recording metadata and file information.
 
 #### `zoom_phone_recordings_v4`
+
 Phone call recording metadata and file information.
 
 #### `zoom_webinar_recordings_v4`
+
 Webinar recording metadata and file information.
 
 ## Expected Output
@@ -340,7 +357,7 @@ If you see many 400/404 errors for phone recordings in the warning logs:
    ```yaml
    # In config.yaml
    processing:
-     enable_phone_recordings: false  # Set to false to skip phone recordings entirely
+     enable_phone_recordings: false # Set to false to skip phone recordings entirely
    ```
 
 4. **Expected Error Messages**: The following are normal when users don't have phone licenses:
@@ -373,13 +390,10 @@ logging:
 4. Add tests if applicable
 5. Submit a pull request
 
-## License
-
-[Add your license information here]
-
 ## Support
 
 For issues and questions:
+
 1. Check the debug logs in `logs/zoom_backup_debug.log`
 2. Review the configuration in `config.yaml`
 3. Ensure all Zoom API permissions are properly configured
