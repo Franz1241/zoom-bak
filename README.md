@@ -1,51 +1,162 @@
-# Zoom Recordings Backup Script
+# Zoom Recordings Backup Tool
 
 ## Overview
 
-This Python script provides a comprehensive backup solution for Zoom recordings, including meeting recordings, phone call recordings, and webinar recordings. It uses Zoom's Server-to-Server OAuth API to authenticate and download all available recordings from your Zoom account to local storage while maintaining metadata in a PostgreSQL database.
+This Python application provides a comprehensive backup solution for Zoom recordings, including meeting recordings, phone call recordings, and webinar recordings. It uses Zoom's Server-to-Server OAuth API to authenticate and download all available recordings from your Zoom account to local storage while maintaining metadata in a PostgreSQL database.
 
-## Purpose
+## Features
 
 - **Complete Backup**: Download all meeting recordings, phone recordings, and webinar recordings from your Zoom account
 - **Historical Data**: Retrieve recordings dating back to November 2020 (or your specified start date)
 - **Metadata Preservation**: Store comprehensive metadata in PostgreSQL for easy searching and organization
 - **Progress Tracking**: Two-phase process that first discovers all recordings, then downloads them with status tracking
-- **Error Resilience**: Robust error handling with automatic token refresh and retry mechanisms
+- **Robust Error Handling**: Automatic token refresh, retry mechanisms, and comprehensive logging
+- **Modular Architecture**: Clean separation of concerns with dedicated modules for different functionalities
+- **YAML Configuration**: Centralized configuration management for easy customization
+- **Advanced Logging**: Multi-level logging with file rotation and real-time monitoring
 
-## How It Works
+## Architecture
 
-### Two-Phase Process
+The application has been refactored into a modular structure for better maintainability and extensibility:
 
-#### Phase 1: Discovery
-
-1. **User Enumeration**: Retrieves all active users from your Zoom account
-2. **Recording Discovery**: For each user, searches through date ranges to find all available recordings
-3. **Inventory Creation**: Stores all found recordings in the `zoom_recording_inventory_{version}` table with status "found"
-4. **Validation**: Reports what was discovered, including specific checks for historical data (2020 recordings)
-
-#### Phase 2: Download
-
-1. **Queue Processing**: Processes all recordings marked as "found" in the inventory
-2. **File Download**: Downloads each recording file to organized local directories
-3. **Metadata Storage**: Saves detailed metadata to type-specific tables
-4. **Status Updates**: Updates inventory status to "downloaded", "failed", or "skipped"
-
-### Directory Structure
+### Module Structure
 
 ```
-zoom_backups_{version}/
-├── meetings/
-│   └── user@email.com/
-│       ├── meeting_id_file_id.mp4
-│       ├── meeting_id_file_id.m4a
-│       └── meeting_id_file_id.vtt
-├── phone/
-│   └── user@email.com/
-│       └── call_id_timestamp.mp3
-└── webinars/
-    └── user@email.com/
-        └── webinar_files...
+zoom_bak_v2/
+├── main.py                    # Main entry point
+├── config.yaml                # Configuration file
+├── logging_config.py          # Logging configuration
+├── database/                  # Database operations
+│   ├── __init__.py
+│   ├── inventory.py          # Recording inventory management
+│   ├── metadata.py           # Metadata storage operations
+│   └── setup.py              # Database schema setup
+├── zoom_api/                  # Zoom API interactions
+│   ├── __init__.py
+│   ├── auth.py               # OAuth authentication
+│   ├── discovery.py          # Recording discovery
+│   ├── download.py           # File download operations
+│   └── user.py               # User management
+└── utils/                     # Utility functions
+    ├── __init__.py
+    ├── api.py                # API request helpers
+    ├── file.py               # File operations
+    └── misc.py               # Configuration and retry utilities
 ```
+
+### Key Components
+
+#### Authentication Module (`zoom_api/auth.py`)
+- Handles OAuth token management with automatic refresh
+- Built-in retry logic for authentication failures
+- Token expiration tracking and proactive refresh
+
+#### Discovery Module (`zoom_api/discovery.py`)
+- Discovers recordings across all users and date ranges
+- Handles pagination and rate limiting
+- Stores findings in the inventory database
+
+#### Download Module (`zoom_api/download.py`)
+- Processes the recording inventory for downloads
+- Manages file organization and metadata storage
+- Implements download retry logic with exponential backoff
+
+#### Database Modules (`database/`)
+- **setup.py**: Manages database schema and versioning
+- **inventory.py**: Handles recording inventory operations
+- **metadata.py**: Stores and retrieves recording metadata
+
+#### Utility Modules (`utils/`)
+- **misc.py**: Configuration management and retry decorators
+- **api.py**: API request helpers with error handling
+- **file.py**: File operations and path management
+
+## Configuration
+
+The application uses a centralized YAML configuration system that replaces hardcoded values:
+
+### Configuration File (`config.yaml`)
+
+```yaml
+version: "v4"
+
+database:
+  url: "postgresql://postgres:postgres@localhost:5432/zoom_backups"
+
+directories:
+  base_dir: "./zoom_backups"
+  log_dir: "./logs"
+
+dates:
+  start_date: "2020-11-01"
+  
+api:
+  rate_limit_delay: 0.5  
+  request_timeout: 60    
+  retries: 3
+  token_refresh_buffer: 300  
+  
+  page_sizes:
+    recordings: 30
+    users: 300
+    phone_recordings: 30
+  
+  sleep_durations:
+    rate_limit: 60      
+    retry: 30           
+    token_refresh: 5    
+    download_retry: 60  
+
+processing:
+  months_per_range: 6   
+  
+logging:
+  levels:
+    console: "INFO"
+    file_debug: "DEBUG" 
+    file_info: "INFO"
+    file_warning: "WARNING"
+  
+  files:
+    debug: "zoom_backup_debug.log"
+    info: "zoom_backup_info.log"
+    warnings: "zoom_backup_warnings.log"
+```
+
+## Installation
+
+### Prerequisites
+
+- Python 3.10+
+- PostgreSQL database
+- Sufficient disk space for recordings storage
+
+### Setup
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd zoom_bak_v2
+   ```
+
+2. **Install dependencies using uv:**
+   ```bash
+   uv sync
+   ```
+
+3. **Set up environment variables:**
+   Create a `.env` file in the project root:
+   ```env
+   ZOOM_ACCOUNT_ID=your_zoom_account_id
+   ZOOM_CLIENT_ID=your_zoom_client_id
+   ZOOM_CLIENT_SECRET=your_zoom_client_secret
+   ```
+
+4. **Configure the application:**
+   Edit `config.yaml` to match your environment:
+   - Update the PostgreSQL connection URL
+   - Adjust directory paths as needed
+   - Modify date ranges and API settings
 
 ## Required Zoom Permissions
 
@@ -72,211 +183,184 @@ Your Zoom Server-to-Server OAuth App **MUST** have the following scopes enabled:
 6. Ensure "Account-level" permissions are selected
 7. Get app approval from your Zoom account admin if required
 
-## Prerequisites
-
-### System Requirements
-
-- Python 3.10+
-- PostgreSQL database
-- Sufficient disk space for recordings storage
-
-### Python Dependencies
-
-```bash
-uv add requests psycopg2-binary python-dotenv python-dateutil
-```
-
-## Configuration
-
-### Environment Variables
-
-Create a `.env` file in the script directory:
-
-```env
-ZOOM_ACCOUNT_ID=your_zoom_account_id
-ZOOM_CLIENT_ID=your_zoom_client_id
-ZOOM_CLIENT_SECRET=your_zoom_client_secret
-```
-
-### Database Configuration
-
-Update the PostgreSQL connection string in the script:
-
-```python
-POSTGRES_URL = "postgresql://username:password@localhost:5432/zoom_backups"
-```
-
-### Script Configuration
-
-Adjust these variables in the script as needed:
-
-```python
-BASE_DIR = "./zoom_backups_{version}"          # Local storage directory
-START_DATE = "2020-11-01"               # Earliest date to search
-END_DATE = datetime.now().strftime("%Y-%m-%d")  # Latest date
-RATE_LIMIT_DELAY = 0.5                  # API rate limiting (seconds)
-```
-
-## Database Schema
-
-### Core Tables
-
-#### `zoom_recording_inventory_{version}`
-
-Master inventory of all discovered recordings with download status tracking.
-
-#### `zoom_recordings_{version}`
-
-Meeting recording metadata and file information.
-
-#### `zoom_phone_recordings_{version}`
-
-Phone call recording metadata and file information.
-
-#### `zoom_webinar_recordings_{version}`
-
-Webinar recording metadata and file information.
-
-## Logging System
-
-The script creates comprehensive logs in the `./logs/` directory:
-
-- **`zoom_backup_debug.log`** - Detailed debug information for troubleshooting
-- **`zoom_backup_info.log`** - General process information and progress
-- **`zoom_backup_warnings.log`** - Warnings and errors only
-- **Console output** - Real-time progress information
-
 ## Usage
 
 ### Basic Execution
 
 ```bash
-python zoom_backup_script.py
+# Activate the virtual environment
+source .venv/bin/activate
+
+# Run the backup process
+python main.py
 ```
 
 ### Monitoring Progress
 
-Monitor the console output and log files to track progress:
+The application provides comprehensive logging across multiple levels:
 
 ```bash
 # Watch real-time progress
 tail -f logs/zoom_backup_info.log
 
-# Check for errors
+# Monitor debug information
+tail -f logs/zoom_backup_debug.log
+
+# Check for errors and warnings
 tail -f logs/zoom_backup_warnings.log
 ```
+
+## How It Works
+
+### Two-Phase Process
+
+#### Phase 1: Discovery
+
+1. **Database Setup**: Creates or updates database schema with version support
+2. **User Enumeration**: Retrieves all active users from your Zoom account
+3. **Recording Discovery**: For each user, searches through date ranges to find all available recordings
+4. **Inventory Creation**: Stores all found recordings in the `zoom_recording_inventory_v4` table with status "found"
+5. **Validation**: Reports what was discovered, including specific checks for historical data
+
+#### Phase 2: Download
+
+1. **Queue Processing**: Processes all recordings marked as "found" in the inventory
+2. **File Download**: Downloads each recording file to organized local directories
+3. **Metadata Storage**: Saves detailed metadata to type-specific tables
+4. **Status Updates**: Updates inventory status to "downloaded", "failed", or "skipped"
+
+### Directory Structure
+
+```
+zoom_backups_v4/
+├── meetings/
+│   └── user@email.com/
+│       ├── meeting_id_file_id.mp4
+│       ├── meeting_id_file_id.m4a
+│       └── meeting_id_file_id.vtt
+├── phone/
+│   └── user@email.com/
+│       └── call_id_timestamp.mp3
+└── webinars/
+    └── user@email.com/
+        └── webinar_files...
+```
+
+## Error Handling and Reliability
+
+### Retry Mechanisms
+
+The application implements sophisticated retry logic:
+
+- **API Retry**: Automatic retry for API requests with exponential backoff
+- **File Retry**: Robust file download retry with customizable delays
+- **Database Retry**: Database operation retry for transient connection issues
+- **Token Refresh**: Proactive token refresh to prevent authentication failures
+
+### Logging System
+
+Multi-level logging system with:
+- **Console Output**: Real-time progress information
+- **Debug Logs**: Detailed technical information for troubleshooting
+- **Info Logs**: General process information and progress
+- **Warning Logs**: Warnings and errors only
+
+## Database Schema
+
+### Core Tables
+
+#### `zoom_recording_inventory_v4`
+Master inventory of all discovered recordings with download status tracking.
+
+#### `zoom_recordings_v4`
+Meeting recording metadata and file information.
+
+#### `zoom_phone_recordings_v4`
+Phone call recording metadata and file information.
+
+#### `zoom_webinar_recordings_v4`
+Webinar recording metadata and file information.
 
 ## Expected Output
 
 ### Discovery Phase
 
 ```
-2025-06-17 01:00:00 - INFO - Starting recording discovery phase...
-2025-06-17 01:00:05 - INFO - [1/50] Discovering recordings for: user1@company.com
-2025-06-17 01:00:10 - INFO - Discovered 25 meeting recordings for user1@company.com
-2025-06-17 01:00:15 - INFO - Discovery Results:
-2025-06-17 01:00:15 - INFO -   meeting: 1250 recordings (2020-11-01 to 2025-06-16)
-2025-06-17 01:00:15 - INFO -   phone: 45 recordings (2021-03-15 to 2025-06-16)
+2025-01-18 10:00:00 - INFO - Starting Zoom backup process...
+2025-01-18 10:00:01 - INFO - Setting up database with version: v4
+2025-01-18 10:00:02 - INFO - Refreshing access token...
+2025-01-18 10:00:03 - INFO - Access token refreshed successfully
+2025-01-18 10:00:05 - INFO - Found 50 users to process...
+2025-01-18 10:00:10 - INFO - [1/50] Discovering recordings for: user1@company.com
+2025-01-18 10:00:15 - INFO - Discovered 25 meeting recordings for user1@company.com
 ```
 
 ### Download Phase
 
 ```
-2025-06-17 01:30:00 - INFO - Starting download phase...
-2025-06-17 01:30:00 - INFO - Found 1295 recordings to download
-2025-06-17 01:30:05 - INFO - [1/1295] Downloading meeting recording: abc123 (MP4)
-2025-06-17 01:30:08 - INFO - Downloaded meeting recording: abc123_def456.mp4 (125648 bytes)
+2025-01-18 10:30:00 - INFO - Starting download phase...
+2025-01-18 10:30:00 - INFO - Found 1295 recordings to download
+2025-01-18 10:30:05 - INFO - [1/1295] Downloading meeting recording: abc123 (MP4)
+2025-01-18 10:30:08 - INFO - Downloaded meeting recording: abc123_def456.mp4 (125648 bytes)
 ```
 
 ### Final Summary
 
 ```
-2025-06-17 03:45:00 - INFO - Summary:
-2025-06-17 03:45:00 - INFO -   Meeting recordings downloaded: 1250
-2025-06-17 03:45:00 - INFO -   Phone recordings downloaded: 45
-2025-06-17 03:45:00 - INFO -   Inventory status:
-2025-06-17 03:45:00 - INFO -     downloaded: 1290
-2025-06-17 03:45:00 - INFO -     failed: 5
+2025-01-18 12:45:00 - INFO - Backup process completed!
+2025-01-18 12:45:00 - INFO - Summary:
+2025-01-18 12:45:00 - INFO -   Meeting recordings downloaded: 1250
+2025-01-18 12:45:00 - INFO -   Phone recordings downloaded: 45
+2025-01-18 12:45:00 - INFO -   Inventory status:
+2025-01-18 12:45:00 - INFO -     downloaded: 1290
+2025-01-18 12:45:00 - INFO -     failed: 5
+2025-01-18 12:45:00 - INFO - Inventory by year and type:
+2025-01-18 12:45:00 - INFO -   2020 (meeting): 45
+2025-01-18 12:45:00 - INFO -   2021 (meeting): 234
+2025-01-18 12:45:00 - INFO -   2022 (meeting): 456
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-#### 401 Unauthorized Errors
+1. **Authentication Failures**: Check your Zoom app credentials and scopes
+2. **Database Connection**: Verify PostgreSQL connection string in `config.yaml`
+3. **Disk Space**: Ensure sufficient disk space for recordings storage
+4. **Rate Limiting**: Application handles rate limiting automatically with configurable delays
 
-- **Cause**: Insufficient app permissions or scope issues
-- **Solution**:
-  1. Verify all required scopes are enabled
-  2. Ensure account-level permissions (not user-level)
-  3. Check if app needs admin approval
+### Debug Mode
 
-#### Missing Historical Data
+Enable debug logging by setting the console log level to "DEBUG" in `config.yaml`:
 
-- **Cause**: Recordings may have been automatically deleted by Zoom's retention policy
-- **Check**: Review the inventory table to see what was actually found vs expected
+```yaml
+logging:
+  levels:
+    console: "DEBUG"
+```
 
-#### Database Constraint Errors
+## Version History
 
-- **Cause**: Field size limitations or data type mismatches
-- **Solution**: The {version} tables have increased field sizes to handle longer IDs
+- **v4**: Current version with modular architecture
+- **v3**: Previous version (legacy)
+- **v2**: Initial version
 
-#### Rate Limiting
+## Contributing
 
-- **Cause**: Too many API requests too quickly
-- **Solution**: Script includes automatic rate limiting and retry logic
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
-### Debugging Steps
+## License
 
-1. **Check Discovery Results**: Look at the inventory table to see what recordings were found
-
-   ```sql
-   SELECT recording_type, COUNT(*), MIN(start_time), MAX(start_time)
-   FROM zoom_recording_inventory_{version}
-   GROUP BY recording_type;
-   ```
-
-2. **Check 2020 Data**: Verify if expected historical recordings were discovered
-
-   ```sql
-   SELECT user_email, COUNT(*)
-   FROM zoom_recording_inventory_{version}
-   WHERE start_time >= '2020-11-01' AND start_time < '2021-01-01'
-   GROUP BY user_email;
-   ```
-
-3. **Review Failed Downloads**: Check what failed and why
-   ```sql
-   SELECT recording_type, status, COUNT(*)
-   FROM zoom_recording_inventory_{version}
-   GROUP BY recording_type, status;
-   ```
-
-## Data Retention Notes
-
-- **Zoom's Policy**: Recordings may be automatically deleted based on your Zoom account's retention settings
-- **Cloud Storage**: Only recordings stored in Zoom cloud will be accessible via API
-- **Local Recordings**: Recordings saved locally by users are not accessible through this API
-
-## Security Considerations
-
-- Store Zoom credentials securely using environment variables
-- Limit database access to necessary users only
-- Consider encrypting sensitive recording data at rest
-- Regularly rotate Zoom app credentials
-- Monitor access logs for unauthorized usage
-
-## Performance Optimization
-
-- **Batch Processing**: Script processes recordings in batches to handle large datasets
-- **Rate Limiting**: Built-in delays prevent API throttling
-- **Resume Capability**: Two-phase approach allows resuming interrupted downloads
-- **Parallel Processing**: Consider running multiple instances for different user groups (advanced)
+[Add your license information here]
 
 ## Support
 
-For issues related to:
-
-- **Zoom API**: Check [Zoom API Documentation](https://developers.zoom.us/docs/api/)
-- **Script Functionality**: Review debug logs and ensure all prerequisites are met
-- **Database Issues**: Verify PostgreSQL connection and permissions
+For issues and questions:
+1. Check the debug logs in `logs/zoom_backup_debug.log`
+2. Review the configuration in `config.yaml`
+3. Ensure all Zoom API permissions are properly configured
+4. Check database connectivity and schema version
