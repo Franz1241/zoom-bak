@@ -8,3 +8,13 @@ wheels/
 
 # Virtual environments
 .venv
+
+#env files
+.env
+
+# Logs
+logs/
+
+
+# Local Storage
+zoom_backups*/

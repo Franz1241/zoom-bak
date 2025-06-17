@@ -843,7 +843,7 @@ def main():
     logger.info(f"Found {len(user_emails)} users to process...")
 
     # Phase 1: Discovery
-    # discover_all_recordings(user_emails, token)
+    discover_all_recordings(user_emails, token)
 
     # Phase 2: Download
     download_recordings_from_inventory()
