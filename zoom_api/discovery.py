@@ -2,7 +2,6 @@
 Zoom API recording discovery module.
 Handles discovery and cataloging of recordings before download.
 """
-import json
 from urllib.parse import quote
 from utils.api import make_api_request, generate_date_ranges
 from database.inventory import (
@@ -32,7 +31,13 @@ def discover_all_recordings(user_emails, token, config, cursor, conn, version):
 
         try:
             discover_meeting_recordings(email, token, config, cursor, conn, version)
-            discover_phone_recordings(email, token, config, cursor, conn, version)
+            
+            # Only discover phone recordings if enabled in config
+            if config.get('processing', {}).get('enable_phone_recordings', True):
+                discover_phone_recordings(email, token, config, cursor, conn, version)
+            else:
+                logger.debug(f"Phone recordings disabled in config, skipping for {email}")
+                
             # discover_webinar_recordings(email, token, config, cursor, conn, version)  # Add if needed
 
         except Exception as e:
@@ -125,6 +130,7 @@ def discover_meeting_recordings(user_email, token, config, cursor, conn, version
 def discover_phone_recordings(user_email, token, config, cursor, conn, version):
     """
     Discover phone recordings and store in inventory.
+    Uses smaller date ranges like meeting recordings to avoid API timeouts.
     
     Args:
         user_email: User email address
@@ -140,33 +146,50 @@ def discover_phone_recordings(user_email, token, config, cursor, conn, version):
     from datetime import datetime, timezone
     end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
-    next_page_token = None
+    # Use date ranges for phone recordings too to avoid large date spans
+    date_ranges = generate_date_ranges(start_date, end_date, config)
     total_found = 0
 
-    while True:
-        params = {"from": start_date, "to": end_date, "page_size": config['api']['page_sizes']['phone_recordings']}
-        if next_page_token:
-            params["next_page_token"] = next_page_token
+    for range_start, range_end in date_ranges:
+        next_page_token = None
+        range_found = 0
 
-        url = f"https://api.zoom.us/v2/phone/users/{quote(user_email)}/recordings"
-        data = make_api_request(url, token, config, params)
+        while True:
+            params = {"from": range_start, "to": range_end, "page_size": config['api']['page_sizes']['phone_recordings']}
+            if next_page_token:
+                params["next_page_token"] = next_page_token
 
-        if not data or "recordings" not in data:
-            break
+            url = f"https://api.zoom.us/v2/phone/users/{quote(user_email)}/recordings"
+            data = make_api_request(url, token, config, params)
 
-        for recording in data["recordings"]:
-            if recording.get("download_url"):
-                if insert_phone_inventory(
-                    cursor, conn, recording.get("id"), user_email,
-                    recording.get("start_time"), recording.get("duration"),
-                    "mp3", recording.get("file_size"), recording.get("download_url"),
-                    {"recording": recording}, version
-                ):
-                    total_found += 1
+            if not data:
+                # API call failed (likely 400/404 for no phone license) - this is expected
+                logger.debug(f"No phone recordings data returned for {user_email} in {range_start} to {range_end} - likely no phone license")
+                break
+                
+            if "recordings" not in data:
+                logger.debug(f"No recordings field in response for {user_email} in {range_start} to {range_end}")
+                break
 
-        next_page_token = data.get("next_page_token")
-        if not next_page_token:
-            break
+            for recording in data["recordings"]:
+                if recording.get("download_url"):
+                    if insert_phone_inventory(
+                        cursor, conn, recording.get("id"), user_email,
+                        recording.get("start_time"), recording.get("duration"),
+                        "mp3", recording.get("file_size"), recording.get("download_url"),
+                        {"recording": recording}, version
+                    ):
+                        range_found += 1
+
+            next_page_token = data.get("next_page_token")
+            if not next_page_token:
+                break
+
+        total_found += range_found
+        if range_found > 0:
+            logger.debug(
+                f"Found {range_found} phone recordings for {user_email} in {range_start} to {range_end}"
+            )
 
     conn.commit()
     if total_found > 0:

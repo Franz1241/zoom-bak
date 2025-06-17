@@ -30,7 +30,7 @@ api:
 
 processing:
   months_per_range: 6   
-  
+  enable_phone_recordings: true
 logging:
   levels:
     console: "INFO"

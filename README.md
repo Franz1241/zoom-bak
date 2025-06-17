@@ -329,6 +329,26 @@ Webinar recording metadata and file information.
 3. **Disk Space**: Ensure sufficient disk space for recordings storage
 4. **Rate Limiting**: Application handles rate limiting automatically with configurable delays
 
+### Phone Recording Issues
+
+If you see many 400/404 errors for phone recordings in the warning logs:
+
+1. **No Zoom Phone License**: These errors are **expected** if your organization doesn't have Zoom Phone licenses for all users
+2. **Missing Phone Permissions**: Ensure your Zoom app has `phone:read:admin` scope enabled
+3. **Disable Phone Processing**: If your organization doesn't use Zoom Phone at all, you can disable phone recording discovery entirely:
+
+   ```yaml
+   # In config.yaml
+   processing:
+     enable_phone_recordings: false  # Set to false to skip phone recordings entirely
+   ```
+
+4. **Expected Error Messages**: The following are normal when users don't have phone licenses:
+   - `400 Client Error: Bad Request for url: https://api.zoom.us/v2/phone/users/{email}/recordings`
+   - `404 Client Error: Not Found for url: https://api.zoom.us/v2/phone/users/{email}/recordings`
+
+These errors will be logged at DEBUG level after the fixes and won't appear in warning logs.
+
 ### Debug Mode
 
 Enable debug logging by setting the console log level to "DEBUG" in `config.yaml`:

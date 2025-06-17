@@ -86,7 +86,7 @@ def make_api_request(url, token, config, params=None, retries=None):
                 )
                 if attempt < retries - 1:
                     time.sleep(config['api']['sleep_durations']['retry'])
-                continue
+                    continue
                 return None
 
         except Exception as e:
