@@ -56,8 +56,11 @@ def main():
     # Phase 1: Discovery
     discover_all_recordings(user_emails, token, CONFIG, cursor, conn, VERSION)
 
-    # Phase 2: Download
-    download_recordings_from_inventory(token, CONFIG, cursor, conn, VERSION)
+    # Phase 2: Download (with token refresh support)
+    updated_token = download_recordings_from_inventory(token, CONFIG, cursor, conn, VERSION)
+    
+    if updated_token != token:
+        logger.info("Token was refreshed during download process")
 
     logger.info("Backup process completed!")
 
@@ -65,9 +68,15 @@ def main():
     meeting_count, phone_count = get_download_counts(cursor, VERSION)
     status_counts = get_status_counts(cursor, VERSION)
 
+    # Get token refresh statistics
+    from zoom_api.download import _token_refresh_counter
+    
     logger.info("Summary:")
     logger.info(f"  Meeting recordings downloaded: {meeting_count}")
     logger.info(f"  Phone recordings downloaded: {phone_count}")
+    logger.info(f"  Total 401 errors encountered: {_token_refresh_counter['total_401s']}")
+    if _token_refresh_counter['last_refresh']:
+        logger.info(f"  Last token refresh: {_token_refresh_counter['last_refresh']}")
     logger.info("  Inventory status:")
     for status, count in status_counts:
         logger.info(f"    {status}: {count}")
