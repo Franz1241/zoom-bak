@@ -1,0 +1,12 @@
+services:
+  bak_db:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=zoom_backups
+    volumes:
+      - ./bak_db_data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+    restart: unless-stopped

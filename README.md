@@ -1,6 +1,6 @@
 # Zoom Recordings Backup Tool
 
-## Why? (non-AI gen)
+## Why?
 
 I suffered a lot from backing up the Zoom data before migrating to a new platform. Its really amazing how Zoom doesnt provide a backup all option at all. So I decided to make a program that does it for me and share it so you dont have to suffer the same pain lol. Feel free to copy/contribute to this code, ill probably just use it once and then try to keep up if any changes on the Zoom API happen
 
@@ -137,9 +137,10 @@ logging:
 ### Prerequisites
 
 - Python 3.10+
-- PostgreSQL database
+- PostgreSQL database (or Docker to run the provided PostgreSQL container)
 - Sufficient disk space for recordings storage
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
+- Docker and Docker Compose (optional, for database setup)
 
 ### Setup
 
@@ -150,14 +151,38 @@ logging:
    cd zoom_bak_v2
    ```
 
-2. **Install dependencies using uv:**
+2. **Set up PostgreSQL database:**
+
+   **Option A: Using Docker Compose (Recommended)**
+
+   The project includes a `docker-compose.yml` file that sets up a PostgreSQL database with the correct configuration:
+
+   ```bash
+   # Start the PostgreSQL database
+   docker-compose up -d
+   ```
+
+   This will:
+
+   - Start a PostgreSQL 16 container
+   - Create a database named `zoom_backups`
+   - Set up user `postgres` with password `postgres`
+   - Expose the database on port 5432
+   - Persist data in `./bak_db_data/` directory
+
+   **Option B: Use existing PostgreSQL installation**
+
+   If you have PostgreSQL already installed, create a database named `zoom_backups` and update the connection URL in `config.yaml`.
+
+3. **Install dependencies using uv:**
 
    ```bash
    uv sync
    ```
+
    This will create a `.venv` and install all dependencies from `pyproject.toml` and `uv.lock`.
 
-3. **Set up environment variables:**
+4. **Set up environment variables:**
    Create a `.env` file in the project root:
 
    ```env
@@ -166,9 +191,9 @@ logging:
    ZOOM_CLIENT_SECRET=your_zoom_client_secret
    ```
 
-4. **Configure the application:**
+5. **Configure the application:**
    Edit `config.yaml` to match your environment:
-   - Update the PostgreSQL connection URL
+   - Update the PostgreSQL connection URL (if not using Docker Compose)
    - Adjust directory paths as needed
    - Modify date ranges and API settings
 
@@ -232,11 +257,17 @@ tail -f logs/zoom_backup_warnings.log
 ## Example Workflow
 
 ```bash
+# Start the PostgreSQL database (if using Docker Compose)
+docker-compose up -d
+
 # Install dependencies and set up the environment
 uv sync
 
 # Run the main backup script
 uv run python main.py
+
+# Stop the database when done (optional)
+docker-compose down
 ```
 
 ## How It Works
