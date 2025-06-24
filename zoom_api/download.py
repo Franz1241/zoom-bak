@@ -68,7 +68,7 @@ def should_refresh_token():
     Returns:
         bool: True if token should be refreshed
     """
-    return _token_refresh_counter['consecutive_401s'] >= 10
+    return _token_refresh_counter['consecutive_401s'] >= 1
 
 
 def reset_401_counter():
